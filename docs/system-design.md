@@ -20,6 +20,19 @@ One credit covers one SMS segment, including any sender identification or opt-ou
 
 A birthday greeting and an appointment reminder use the same scheduler. Yearly repetition is a later milestone. Each occurrence will create its own scheduled message and reserve a credit when it is queued.
 
+## Account sessions
+
+Customers sign in with Google and stay signed in while their session can refresh. When access expires, one tab refreshes and the other tabs on the same browser profile reuse the new cookies. Each device signs in separately. Logging out ends refresh for that login. A session that expires or is revoked requires a new sign-in. See the [authentication flow and diagrams](architecture.md#authentication-flow) for browser signing, token rotation, and the expiry rules.
+
+```mermaid
+flowchart LR
+    Login["Sign in with Google"] --> Active["Use Payra"]
+    Active -->|Access expires| Refresh["One tab refreshes"]
+    Refresh -->|Refresh succeeds| Active
+    Refresh -->|Session expired or revoked| Login
+    Active -->|Log out| Login
+```
+
 ## Scheduling rules
 
 - Default the time zone selector to the customer's saved preference, initially `Asia/Dhaka`. Store the chosen IANA time zone alongside the resolved `send_at` instant. If a local time occurs twice, ask the customer to pick an offset. If it does not occur, ask for another time. [PostgreSQL date and time types](https://www.postgresql.org/docs/current/datatype-datetime.html)
@@ -75,6 +88,8 @@ Keep delivery status separate from submission state. After submission, a provide
 ## Launch checks
 
 - Two customers can sign in with Google, and each can access only their own recipients, orders, balances, and messages.
+- Two tabs with expired access share one refresh. A refresh cookie sent without the registered browser key fails, and a used refresh token sent with a valid fresh proof revokes its session.
+- Logout works after access expiry and blocks subsequent refreshes for that login. Credit reservations check for an active session.
 - Both wallets complete a real test checkout after sandbox testing. Duplicate confirmations grant one bundle. Cancelled payments and mismatched amounts grant zero credits.
 - With one credit left, two concurrent scheduling requests produce one scheduled text. Cancellation restores the credit once.
 - A test SMS reaches an opted-in phone. An opted-out recipient results in zero provider submissions. Accounts and the application have send limits.
