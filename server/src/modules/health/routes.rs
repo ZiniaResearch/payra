@@ -1,3 +1,4 @@
+use crate::state::AppState;
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
 use chrono::Utc;
 use serde_json::{Value, json};
@@ -5,7 +6,7 @@ use sqlx::PgPool;
 use std::time::Duration;
 use tokio::time::timeout;
 
-pub(crate) fn routes() -> Router<PgPool> {
+pub(crate) fn routes() -> Router<AppState> {
     Router::new().route("/health", get(health))
 }
 

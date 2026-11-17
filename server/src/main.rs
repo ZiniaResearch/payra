@@ -1,16 +1,16 @@
+mod config;
 mod db;
-mod health;
-mod web;
+mod modules;
+mod router;
+mod state;
 
-use std::{env, error::Error};
+use std::error::Error;
 use tokio::net::TcpListener;
 
 fn main() -> Result<(), Box<dyn Error>> {
     match dotenvy::dotenv() {
-        Ok(path) => println!("Loaded .env from {}", path.display()),
-        Err(error) if error.not_found() => {
-            println!("No .env file found. Reading settings from the process environment.");
-        }
+        Ok(_) => {}
+        Err(error) if error.not_found() => {}
         Err(_) => return Err("could not load .env".into()),
     }
 
@@ -18,13 +18,32 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 async fn serve() -> Result<(), Box<dyn Error>> {
-    let database_url = env::var("DATABASE_URL")?;
-    let bind_addr = env::var("BIND_ADDR")?;
+    let settings = config::load()?;
+    let pool = db::create_pool(&settings.database_url)?;
+    let ui_origin = settings.ui_origin.parse::<axum::http::HeaderValue>()?;
+    let google = modules::auth::GoogleVerifier::new(
+        &settings.google_client_id,
+        &settings.google_client_secret,
+        &settings.ui_origin,
+    )?;
+    let token_signer =
+        modules::auth::TokenSigner::new(&settings.access_jwt_secret, &settings.refresh_jwt_secret);
+    // Compare signed proof URLs with configuration, not untrusted Host headers.
+    let api_origin = reqwest::Url::parse(&settings.api_origin)?;
+    let refresh_url = api_origin.join("/api/auth/refresh")?.to_string();
+    let logout_url = api_origin.join("/api/auth/logout")?.to_string();
 
-    let pool = db::create_pool(&database_url)?;
-    let app = web::router(pool);
+    let state = state::AppState {
+        pool,
+        google,
+        ui_origin,
+        token_signer,
+        refresh_url,
+        logout_url,
+    };
+    let app = router::build(state);
 
-    let listener = TcpListener::bind(bind_addr.as_str()).await?;
+    let listener = TcpListener::bind(settings.bind_addr.as_str()).await?;
     axum::serve(listener, app).await?;
     Ok(())
 }
