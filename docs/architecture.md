@@ -1,168 +1,332 @@
-# SMS scheduling SaaS architecture
+# Architecture
 
-Payra has two applications in one repository. `ui/` is a React and TypeScript app built with Vite. `server/` is the Rust modular monolith. Its `serve` command runs the Axum API, `worker` submits scheduled messages, and `migrate` updates the database schema. These commands ship in one Rust image. Caddy serves the compiled React app over HTTPS and forwards API requests to Axum. PostgreSQL stores accounts, schedules, credits, and payment history.
+Payra has a React/TypeScript TanStack Start application in `ui/` and a Rust/Axum
+modular monolith in `server/`, using SQLx/PostgreSQL. Use Bun for UI tooling.
+See [system design](system-design.md) for product rules and [authentication](auth.md)
+for profile, refresh/logout, errors, security limits, and manual checks.
 
-See the [system design](system-design.md) for customer behavior, bundle rules, scheduling defaults, and launch checks.
+## Current state
 
-## Runtime components
+Implemented:
 
-```mermaid
-flowchart LR
-    Browser["Customer browser"] --> Proxy["Caddy"]
-    Proxy -->|React files and page URLs| Ui["Compiled React UI"]
-    Proxy -->|"/api/*"| Web["Axum API"]
-    Browser --> Checkout["Hosted checkout"]
-    Checkout -->|Payment notification| Proxy
-    Web -->|Validate payment| Checkout
-    Web -->|OpenID Connect| Google["Google"]
-    Web --> Database[("PostgreSQL")]
-    Worker["SMS worker"] --> Database
-    Worker --> Sms["SMS provider"]
-    Sms -->|Delivery and opt-out events| Proxy
-```
+- Google authorization-code login, account creation/reuse, P-256 browser keys,
+  separate access/refresh JWTs, signed rotation/reuse revocation, and signed logout.
+- Local access-JWT middleware without session-table reads, protected
+  `GET /api/profile`, shared terminal Query/Mutation auth-error handling, and
+  session-ended tab synchronization.
+- Full source-owned BoardUI sidebar, independent account skeleton/email/retry UI,
+  theme controls, and one mounted signed-logout hook.
+- Client-rendered pathless `_protected` layout and initially empty `/analytics`,
+  without a blocking auth loader, IndexedDB-presence gate, or identity-demo API.
+- PostgreSQL 18 Compose service and account/session migrations.
 
-The React app renders pages and calls the API. Axum owns sessions, authorization, validation, and HTTP responses. The worker owns scheduled dispatch. The web and worker processes call application functions backed by SQLx. Payment and SMS adapters translate provider responses into local outcomes. Start with a fake SMS adapter and a clock you can set in tests. [Axum routing and state](https://docs.rs/axum/latest/axum/)
+Deferred:
 
-## Repository layout
+| Area | Current boundary |
+| --- | --- |
+| Header/mobile navigation | `Header.tsx` is an unused stub; no integration or mobile drawer. |
+| Workspace/settings/support | Sidebar UI is installed; product actions are not connected or persisted. |
+| Profile | Email/ID read only; no editing, display-name/photo storage, or `/profile` page. |
+| Product pages | `/` is a public placeholder. Pricing, consent, messages, recipients, billing, and analytics data are planned. |
+| Scheduling/payments | No worker, credit/billing modules, provider integrations, or product migrations. |
+| Deployment/hardening | No application Dockerfiles/Caddy stack, worker/migration subcommands, scheduled cleanup, auth rate limits, or automated auth regression coverage. |
 
-```text
-payra/
-├── compose.yaml
-├── docs/
-├── deploy/
-│   └── caddy/
-│       ├── Caddyfile       HTTPS, React page fallback, and API proxy
-│       └── Dockerfile      Builds React and copies its output into Caddy
-├── server/
-│   ├── .env.example       Local Rust settings template
-│   ├── Cargo.toml
-│   ├── Cargo.lock
-│   ├── Dockerfile          Shared image for web, worker, and migrations
-│   ├── migrations/        Versioned PostgreSQL schema changes
-│   └── src/               Axum, business rules, and the worker
-└── ui/
-    ├── package.json
-    ├── vite.config.ts
-    └── src/               React application
-```
+No request-session tracker, per-login generation, additional cancellation
+controller, or session-started notification is part of this design.
 
 ## Local development
 
-On a fresh checkout, copy the example settings and start PostgreSQL from the Payra root. Then start Axum from `server/` so it finds `server/.env`.
+Prerequisites: Bun, Rust, Docker Compose, and a PostgreSQL-capable SQLx CLI.
+Migrations use PostgreSQL 18's `uuidv7()`.
+
+From the repository root:
 
 ```bash
 cp -i server/.env.example server/.env
+cp -i ui/.env.example ui/.env
 docker compose up -d db
-cd server
+```
+
+| File | Local settings |
+| --- | --- |
+| `server/.env` | Example `DATABASE_URL`, `BIND_ADDR=127.0.0.1:8000`, `UI_ORIGIN=http://localhost:3000`, `API_ORIGIN=http://localhost:8000`, Google client ID/secret, and distinct access/refresh JWT secrets. |
+| `ui/.env` | The same public client ID as `VITE_GOOGLE_CLIENT_ID`; `VITE_API_URL=http://localhost:8000`. |
+
+Generate each JWT secret independently, for example with `openssl rand -base64 32`,
+and retain both across restarts. Never put server secrets in `VITE_` variables.
+Configure the Google Web client's authorized frontend origin with the matching
+client ID. [Google client setup](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid)
+
+From `server/`, apply migrations and start Axum; both load its `.env`:
+
+```bash
+sqlx migrate run
 cargo run
 ```
 
-In a second terminal, run `curl -i http://127.0.0.1:3000/health`. Expect `200 OK` when the server can query PostgreSQL. The local template connects to PostgreSQL through its published host port at `127.0.0.1:5432` and binds Axum to `127.0.0.1:3000`.
+`cargo run` does not migrate automatically. `serve`, `worker`, and `migrate` are
+not current CLI subcommands. `GET http://127.0.0.1:8000/health` returns 200 when its
+database check succeeds, or 503 when the two-second check fails/times out.
+
+In another terminal, from `ui/`:
+
+```bash
+bun install
+bun --bun run dev
+```
+
+Open `http://localhost:3000/login`. Use `localhost` consistently for browser-facing
+URLs, even though services bind to loopback. Requests are credentialed/cross-origin;
+Vite has no `/api` proxy. CORS currently allows the configured UI origin, GET/POST,
+content type, and `X-Requested-With`. Auth POSTs check the exact Origin and require
+`X-Requested-With: XmlHttpRequest`.
+
+Browser signing needs Web Crypto, IndexedDB, and Web Locks in a secure context.
+Cookies remain `Secure` locally; use HTTPS/matching origins if the browser rejects
+them on localhost. Production requires public HTTPS origins.
 
 ## Server layout
 
 ```text
-server/src/
-├── main.rs                Wires dependencies and starts the selected command
-├── config.rs              Configuration module when startup settings grow
-├── db.rs                  Creates the shared SQLx PostgreSQL pool
-├── web.rs                 Combines routers and supplies shared web state
-├── health.rs              Database-backed GET /health endpoint
-├── auth.rs                Authentication module entry point
-├── auth/
-│   ├── routes.rs          Sign-in, callback, logout, and current-account endpoints
-│   ├── google.rs          OpenID Connect redirect and token verification
-│   └── sessions.rs        Session storage, lookup, and revocation
-├── recipients.rs          Recipient records, consent, and opt-outs
-├── scheduling.rs          Scheduling module entry point
-├── scheduling/
-│   ├── routes.rs          Message list, create, edit, and cancel endpoints
-│   └── messages.rs        Scheduling rules, message SQL, and job transitions
-├── billing.rs             Billing module entry point
-├── billing/
-│   ├── routes.rs          Bundle, order, balance, and payment endpoints
-│   ├── orders.rs          Checkout orders, payment confirmation, and reconciliation
-│   └── credits.rs         Credit grants, reservations, consumption, and releases
-├── worker.rs              Polls for due jobs, attempts sends, and handles recovery
-└── providers/
-    ├── mod.rs             Declares the provider modules
-    ├── payments.rs        Hosted checkout and gateway API calls
-    └── sms.rs             Fake sender, live sender, and receipt verification
+server/
+├── migrations/                 accounts and auth_sessions
+└── src/
+    ├── main.rs                 Environment, Tokio, API startup, proof URLs
+    ├── config.rs               Required settings
+    ├── db.rs                   Shared SQLx pool
+    ├── router.rs               Public/protected groups and CORS
+    ├── state.rs                Shared state and pool extraction
+    └── modules/
+        ├── mod.rs
+        ├── auth/
+        │   ├── mod.rs
+        │   ├── routes.rs       Google login and auth route registration
+        │   ├── repository.rs   Account/session SQL
+        │   ├── google.rs       Code exchange and ID-token verification
+        │   ├── tokens.rs       JWT issuance/verification
+        │   ├── middleware.rs   Local access verification
+        │   ├── browser_key.rs  Public-key validation
+        │   ├── cookies.rs
+        │   ├── proof.rs        ES256 purpose/URL/hash verification
+        │   ├── refresh.rs      Rotation and reuse revocation
+        │   └── logout.rs       Signed/idempotent logout
+        ├── health/
+        │   ├── mod.rs
+        │   └── routes.rs       Database health
+        └── profile/
+            ├── mod.rs
+            ├── routes.rs       Profile response/error mapping
+            └── repository.rs   Account-scoped email read
 ```
 
-The initial server has four sibling files. `main.rs` loads `.env` before starting Tokio, reads `DATABASE_URL` and `BIND_ADDR`, and starts the listener. `db.rs` creates a pool that connects on demand. `web.rs` merges the health router and gives Axum the pool with `with_state`. `health.rs` registers the route and obtains the pool from Axum when a request arrives.
+`main.rs` supplies pool, Google verifier, token signer, UI origin, and configured
+proof URLs through `AppState`. Access middleware receives only the signer, not
+the database pool. Health/profile extract the pool for their own reads.
 
-Create future feature files when you build those features. A feature can expose `routes()` from a single file and keep that entry point when it grows a directory.
-
-Each HTTP feature exposes a small router. A handler reads the request and authenticated account, calls the feature function, and maps its result to HTTP. Keep SQL close to the feature that owns it. For example, scheduling creates the message and calls billing to reserve a credit inside the same transaction. The worker calls scheduling to claim and settle a job, and calls the SMS adapter to talk to the provider.
+Keep Rust modules feature-oriented: `routes.rs` handles HTTP, `repository.rs`
+handles SQL, and business functions own full transaction boundaries. Future
+recipients, scheduling, billing, worker, and provider code follow this ownership;
+do not create empty scaffolding or one global repository.
 
 ## UI layout
 
-Use `ui/src/app/router.tsx` for the React Router route table and `ui/src/app/layouts/` for shared page layouts. Put URL-level pages in `ui/src/routes/`, feature-specific forms and API calls in `ui/src/features/`, and reusable controls and HTTP helpers in `ui/src/shared/`. Build the UI after the API can be exercised independently. [React Router nested routes](https://reactrouter.com/start/data/routing#nested-routes)
+Current application structure; generic BoardUI files are abbreviated:
 
-Public pages include `/`, `/login`, and `/consent/:token`. The signed-in layout at `/app` hosts the dashboard, messages, recipients, and billing pages. It can direct a signed-out visitor to `/login`. Axum checks the session and ownership on every protected API request.
+```text
+ui/src/
+├── router.tsx                       Query/router integration and auth handler
+├── routeTree.gen.ts                  Generated; do not edit
+├── routes/
+│   ├── __root.tsx                   HTML and global styles
+│   ├── index.tsx                    / placeholder
+│   ├── login.tsx                    /login
+│   └── _protected/
+│       ├── route.tsx                Sidebar and Outlet; ssr: false
+│       └── analytics.tsx            /analytics
+├── modules/
+│   ├── layout/
+│   │   ├── Sidebar.tsx              Payra navigation/composition
+│   │   └── Header.tsx               Unused stub; deferred
+│   ├── auth/
+│   │   ├── GoogleSignInButton.tsx
+│   │   ├── AccountMenu.tsx          Profile state and signed logout
+│   │   ├── api.ts                   Existing Google login request
+│   │   ├── queries.ts               Profile read/options/cache key
+│   │   ├── refresh.ts
+│   │   ├── logout.ts
+│   │   ├── use-logout.ts            Action and private tab-sync hook
+│   │   ├── handle-auth-failure.ts
+│   │   └── ...                     Browser keys, storage, proofs, events
+│   └── analytics/
+│       └── AnalyticsPage.tsx        Initially empty
+├── components/                      Source-owned BoardUI application/base/foundations
+├── shared/api/
+│   ├── client.ts                    Bare Axios client
+│   └── request.ts                   Protected requests and access recovery
+├── integrations/tanstack-query/      Query defaults and devtools
+├── styles.css
+├── styles/                          BoardUI theme/globals/typography
+└── utils/                           Generic UI helpers
+```
 
-## HTTP and authentication
+### Ownership and future routes
 
-| Entry point | Contract |
+| Location | Responsibility |
 | --- | --- |
-| `GET /health` | Runs `SELECT 1` with a two-second timeout. Returns `200 OK` when PostgreSQL answers or `503 Service Unavailable` on a query failure or timeout. |
-| `GET /api/auth/google`, `GET /api/auth/google/callback` | Start OpenID Connect, verify the callback, establish a session, and redirect to the React app. |
-| `POST /api/logout`, `GET /api/me` | End the session and read the current account. |
-| `GET /api/recipients`, `POST /api/recipients` | List account recipients or add a recipient and create a consent invitation. |
-| `GET /api/consent/{token}`, `POST /api/consent/{token}` | Load invitation details for the public consent page and record a recipient's decision. |
-| `GET /api/messages`, `POST /api/messages` | List account messages or reserve a credit and schedule a message. |
-| `PATCH /api/messages/{id}`, `POST /api/messages/{id}/cancel` | Edit a queued message or cancel it and release its credit. |
-| `GET /api/billing/bundles`, `GET /api/billing/balance` | List available bundles and read the account's credit balance. |
-| `GET /api/billing/orders`, `POST /api/billing/orders`, `GET /api/billing/orders/{id}` | List orders, start hosted checkout, and read the status of an account's order. |
-| `POST /api/billing/return` | Receive the gateway's browser return and redirect to the React order page. |
-| `POST /api/webhooks/payments`, `POST /api/webhooks/sms` | Verify payment notifications and authenticate SMS provider events. |
+| `routes/` | URLs, parameters/search validation, route configuration, arranging module components. |
+| `modules/layout/` | Payra-specific sidebar/header composition and navigation. |
+| `modules/<feature>/queries.ts` | Read requests, reusable query options, and cache keys. |
+| `modules/<feature>/mutations.ts` | Write requests and cache updates when writes exist. |
+| `modules/<feature>/*.tsx` | Feature UI with independent loading/error states. |
+| `components/` | Generic BoardUI blocks/primitives; not Payra HTTP behavior. |
+| `shared/api/`, Query integration, `router.tsx` | Transport, refresh coordination, retry defaults, and shared auth-error registration. |
 
-Use a maintained OpenID Connect library. Check the callback state and token claims, including issuer, audience, expiry, and nonce. Use Google's stable subject identifier for the local account. Issue an opaque, expiring app session in a `Secure`, `HttpOnly`, `SameSite=Lax` cookie in production, and invalidate it on logout. Protect browser mutations with CSRF checks. Provider callbacks authenticate through their own verification flow. [Google OpenID Connect](https://developers.google.com/identity/openid-connect/openid-connect), [OWASP session management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html), [OWASP CSRF prevention](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)
+`auth/api.ts` stays for Google login. Other features call HTTP directly in
+`queries.ts`/`mutations.ts`; extract helpers only for genuine reuse. No mutation
+file is needed for the profile read.
 
-Derive `account_id` from the session for every customer query. For example, a cancellation matches both the URL's message ID and the session's account ID. Composite foreign keys protect ownership relationships in PostgreSQL. A consent link uses a random, expiring token tied to one recipient, with only its digest stored in the database. Opening the link loads the consent page. Record the decision only after a POST so a link preview cannot opt someone in. [PostgreSQL constraints](https://www.postgresql.org/docs/current/ddl-constraints.html)
+Planned pages use independent `/profile`, `/messages`, `/messages/new`,
+`/messages/:messageId`, `/recipients`, and `/billing` URLs under the pathless layout,
+not a dashboard prefix. Pricing and `/consent/:token` are planned public pages.
+Add their modules/UI/read-write files only when implemented. The existing profile
+API does not mean the `/profile` page exists.
 
-## PostgreSQL model
+### Rendering and sidebar
 
-| Table | Key fields and constraints |
+`_protected/route.tsx` arranges `Sidebar` and `<Outlet />` with `ssr: false`.
+The sidebar and empty analytics page appear immediately. The account query and
+future page sections load independently: each has its own skeleton/result/retry
+UI, without a page-wide awaited loader or `Promise.all` gate. Signed-out visitors
+can briefly see the empty shell; backend JWT verification is the security boundary,
+not layout grouping or local storage.
+
+The full BoardUI sidebar keeps animated collapse, `Cmd/Ctrl+K` navigation search,
+theme controls, and popovers. Payra supplies actual navigation/account contents
+through `modules/layout/Sidebar.tsx`. The top popover represents Payra; the bottom
+shows real email/loading/unavailable state and offers retry/logout. One account
+instance mounts tab synchronization. Header/mobile drawer are deferred; installed
+workspace/settings examples are not real account/team data or saved settings,
+and Support is unconnected.
+
+Unused template image assets are removed. Generic fallback avatars/file icons
+use initials/Remix icons; optional artwork can be supplied when actually needed.
+
+Follow [BoardUI rules](../ui/AGENTS.md): installed components first, semantic
+colors/composite typography, logical direction-aware layout, accessible controls,
+and existing scroll-fade helpers. Install missing components with
+`bunx boardui@latest add component-name`; do not replace the full sidebar with a
+lookalike or migrate away from Biome.
+
+Vite regenerates routes during development/builds. `generate-routes` currently
+runs the same build as `build`, not a separate route-only generator.
+
+## API and data
+
+| Implemented endpoint | Contract |
 | --- | --- |
-| `accounts` | Internal ID, unique Google subject, display name, email, preferred time zone, sending hold status. |
-| `sessions` | Session token digest, account ID, expiry. |
-| `recipients` | Account ID, ID, normalized phone number, active flag, consent status, consent timestamp and evidence reference, invitation digest and expiry. Unique `(account_id, phone_e164)` and `(account_id, id)`. |
-| `sms_suppressions` | Sending identity, normalized phone number, opt-out timestamp. Unique `(sender_key, phone_e164)`. |
-| `scheduled_messages` | Account ID, recipient ID, rendered body, time zone, `send_at`, `expires_at`, `next_attempt_at`, submission and delivery status, claim token and lease deadline, attempt count, provider message ID. Composite FK `(account_id, recipient_id)` and unique submission key within the account. |
-| `sms_delivery_events` | Verified event key, provider message ID, status, timestamps. Keep unmatched receipts until the dispatch result links them to a message. |
-| `bundles` | Bundle code, label, positive credit quantity, positive price in BDT minor units, active flag. |
-| `payment_orders` | Account ID, bundle code, price and credit snapshots, unique merchant transaction ID, gateway transaction reference, status. A confirmed gateway transaction can settle only one order. |
-| `credit_balances` | Account ID, available and reserved credits as nonnegative integers. One row per account. |
-| `credit_ledger` | Account ID, available and reserved deltas, event kind, linked order or message ID, timestamp, unique event key. Enforce one purchase grant per order and one settlement per message. |
+| `GET /health` | Database-backed health. |
+| `POST /api/auth/google` | Google code/public key → cookies and session/hash metadata. |
+| `POST /api/auth/refresh` | Signed proof → rotated cookies and session/hash metadata. |
+| `POST /api/auth/logout` | Signed proof → end one login, clear cookies, 204. |
+| `GET /api/profile` | Verified account → `{ account_id, email }`, `no-store`. |
 
-Use `timestamptz` for scheduled instants, retry deadlines, and event times. Index scoped history by account and time. Use a partial index on `(next_attempt_at, id)` for messages in the scheduled state, plus an index for expired sending leases. Compare gross checkout amounts as integers in minor units or as exact decimals when parsing gateway values. [PostgreSQL timestamp types](https://www.postgresql.org/docs/current/datatype-datetime.html)
+Auth routes/health are outside access middleware; profile is inside it. The old
+identity-demo endpoint is removed. Detailed failures and security boundaries are
+in [authentication](auth.md).
 
-## Transaction and retry boundaries
+Only `accounts` (UUIDv7 ID, unique Google subject, email, creation time) and
+`auth_sessions` (account FK/cascade, public key, positive counter, deadlines,
+constraints/index) exist. Display names, photos, time zones, and sending holds
+are not stored yet.
 
-**Schedule or cancel.** Lock the account's balance row. For creation, validate eligibility and available credit, insert the message, and write the reservation and updated balance in one transaction. A form submission key unique within the account lets a repeated request return the original schedule. For cancellation, conditionally transition a scoped scheduled row and release only if that transition succeeds. Use balance-row-then-message-row lock order when both are needed. [PostgreSQL row locks](https://www.postgresql.org/docs/current/explicit-locking.html#LOCKING-ROWS)
+### Planned product APIs and schema
 
-**Apply a payment.** Validate with the provider outside the database transaction. Inside the transaction, lock the account balance, confirm the saved order still matches, and write the order update, ledger grant, and balance together. A unique purchase event makes replay safe. Keep cancellation and success redirects informational. A reconciliation job checks old pending orders through the gateway so notification delivery is not the only recovery path. [SSLCOMMERZ order validation and transaction lookup](https://developer.sslcommerz.com/doc/v4/)
+These are targets, not registered routes or applied migrations:
 
-**Claim and submit.** In a short transaction, select one due scheduled row with `FOR UPDATE SKIP LOCKED`, then mark it sending with a fresh claim token and lease deadline. Commit before contacting the provider. Check consent, suppression, account holds, and expiry before the call. Enforce account-wide and global send limits with atomic counter updates before dispatch. Require enough lease time for the bounded provider call and record the result only for that claim. A confirmed temporary rejection can reschedule the same job with bounded backoff. Expiry releases the credit when non-acceptance is known. [PostgreSQL queue-style row locking](https://www.postgresql.org/docs/current/sql-select.html)
+| Area | Endpoints | Data/constraints |
+| --- | --- | --- |
+| Recipients/consent | `GET/POST /api/recipients`; `GET/POST /api/consent/{token}` | Account-scoped recipients; unique account/phone and account/ID; expiring invitation-token digests, consent evidence, and provider suppressions. Open links read only; consent requires POST. |
+| Messages | `GET/POST /api/messages`; `PATCH /api/messages/{id}`; `POST /api/messages/{id}/cancel` | Account-scoped messages/jobs, composite recipient ownership FK, unique submission keys, time zones/send windows, claim/lease/attempt fields, and separate submission/delivery status. |
+| Billing | Bundle/balance reads; order list/create/detail; payment return/webhooks | Bundle catalog, immutable order amount/credit snapshots, unique merchant/gateway transactions, nonnegative available/reserved balances, append-only idempotent ledger. |
+| Delivery | SMS webhook/dispatch/reconciliation | Unique receipt events, provider IDs, unmatched-receipt retention, and unknown-outcome tracking. |
 
-**Recover and reconcile.** Expire overdue queued jobs and release their reservations. Move interrupted sending jobs with expired leases to unknown and retain their reservations. Resolve an unknown job from provider evidence, including a late result from the same claim if it is still current. When a provider offers a documented idempotency key for message creation, reuse the job's stable key. Store verified delivery receipts before acknowledging them, then apply them once their provider message ID is known. Duplicate or out-of-order receipts must preserve the recorded terminal status.
+Extend CORS/methods, authorization, origin checks, validation, and migrations as
+features are built. Use `timestamptz`, exact integer minor-unit money, scoped
+history indexes, and partial due-job/lease indexes.
+
+Planned transaction boundaries:
+
+- **Schedule/cancel:** lock active session, then balance, then message where needed.
+  Reserve/release credit and write message/ledger/balance atomically; a submission
+  key prevents duplicate scheduling.
+- **Payment:** verify provider details outside the DB transaction, then confirm
+  the order and grant credits once inside it. Reconcile delayed notifications;
+  browser redirects are informational, not payment authority.
+- **Dispatch:** claim due jobs with `FOR UPDATE SKIP LOCKED`; commit before the
+  provider call. Recheck consent/suppression/holds/limits/window; record only the
+  current claim. Retry definite temporary rejections, not unknown outcomes.
+- **Recovery:** expire queued jobs and release once; interrupted sends become
+  unknown with credits reserved. Reconcile acceptance before resubmission; use
+  provider idempotency keys where supported.
+
+Use fake SMS/provider adapters and a controllable clock when building this work.
+The planned milestones are one scheduled text, credit/concurrency guarantees,
+sandbox wallet checkout, then live SMS/deployment; acceptance rules are in
+[system design](system-design.md#launch-checks).
 
 ## Docker and VPS
 
-- In development, run Axum locally and configure Vite to proxy `/api` to it. In production, build React in the Caddy Dockerfile and copy the output into the Caddy image. Caddy forwards `/api/*` to Axum with the path intact. It serves static assets and uses `index.html` for React page URLs so a direct visit to a route like `/app/messages` works. The React app and API share one public origin. [Vite dev proxy](https://vite.dev/config/server-options.html#server-proxy), [Caddy SPA routing](https://caddyserver.com/docs/caddyfile/patterns#single-page-apps-spas)
-- Run `caddy`, `web`, `worker`, and `db` in Compose. Run migrations as a one-shot command before starting the two Rust services. Use a PostgreSQL health check and service DNS at `db:5432`. Publish the HTTPS entry point through Caddy and keep the other services on the Compose network. [Compose startup order](https://docs.docker.com/compose/how-tos/startup-order/), [Compose networking](https://docs.docker.com/compose/how-tos/networking/), [Caddy automatic HTTPS](https://caddyserver.com/docs/automatic-https)
-- On the VPS, configure the Rust services with `env_file: ./server/.env` in the root Compose file. Use `db:5432` in the production database URL and set `BIND_ADDR=0.0.0.0:3000` so Caddy can reach Axum. When the Rust image uses `./server` as its build context, exclude `.env` with `server/.dockerignore`. [Compose environment files](https://docs.docker.com/compose/how-tos/environment-variables/set-environment-variables/#use-the-env_file-attribute), [Docker build context](https://docs.docker.com/build/concepts/context/#dockerignore-files)
-- Use a multi-stage image with a non-root runtime user. Inject Google, payment, SMS, and database credentials at runtime. Keep the database and Caddy data on persistent volumes. Back up PostgreSQL off the VPS and test a restore. [Docker multi-stage builds](https://docs.docker.com/build/building/multi-stage/), [PostgreSQL backups](https://www.postgresql.org/docs/current/app-pgdump.html)
-- Log internal IDs and state transitions. Track the age of the oldest due job, unknown sends, overdue pending payments, and failed submissions. Keep message bodies, full phone numbers, tokens, and gateway secrets out of logs, including token-bearing URLs in proxy logs. Use bounded provider timeouts and graceful shutdown so the worker stops taking new jobs before exiting.
+Current Compose runs only PostgreSQL; everything here is planned:
 
-## Build milestones
+- Same-origin HTTPS through Caddy, `/api/*` forwarded unchanged to Axum, with a
+  web service, worker, database, and one-shot migrations.
+- Explicitly configure/verify a compatible TanStack Start static/SPA output before
+  serving client files plus page fallbacks through Caddy. Current `tanstackStart()`
+  configuration does not establish that deployment; route-level `ssr: false` is
+  not a whole-app static build. If retaining Start's server runtime, route page
+  requests to it instead. Do not deploy only client assets and assume it works.
+- Use internal database DNS, a PostgreSQL health check, persistent volumes,
+  backups/restore checks, multi-stage non-root images, secret env files excluded
+  from build contexts, and runtime server secrets. The public Google ID is a UI
+  build input; public API/proof URLs must match HTTPS deployment.
+- Add structured diagnostics, bounded provider calls, graceful shutdown, and
+  queue/unknown-outcome monitoring without logging secrets, proofs, message bodies,
+  or full phone numbers.
 
-| Milestone | Exercise | Done when |
-| --- | --- | --- |
-| 1. Axum and Google | Use the existing Axum modules and PostgreSQL pool. Build Google sign-in and `GET /api/me`, then trace the callback and session lookup. | `GET /health` reports whether Axum can query PostgreSQL, and two Google users have separate local accounts. |
-| 2. One scheduled text | Write the first scheduling queries in `psql`, then call them through SQLx. Run `worker --once` with a fixed clock and fake sender. | A queued test message reaches the fake sender and appears in account-scoped history. |
-| 3. Credits and concurrency | Seed test credits. Implement the ledger and balance transaction, cancellation, and worker claims. Run two concurrent requests for the last credit. | One reservation wins, cancellation releases it once, and two workers cannot both claim a job. |
-| 4. Wallet checkout | Connect sandbox checkout. Exercise successful, failed, mismatched, and duplicate notifications. | One verified order creates one credit grant. The dashboard can show an order while confirmation is pending. |
-| 5. Live SMS and VPS | Add verified provider callbacks, consent enforcement, send limits, and the production Compose deployment. Test cancellation, opt-out, provider timeout, and restart recovery. | A real purchase and send work on the VPS and a backup can be restored into a separate database. |
+## Verification and merge checklist
+
+Snapshot: 2026-11-17. Backend formatting/strict Clippy, UI TypeScript, formatting,
+and the production client/server build pass after template-asset cleanup. Full
+Biome still reports **20 errors and 3 warnings** in installed BoardUI components.
+Live auth/profile/cross-tab verification remains outstanding.
+
+Automated auth tests were deferred in favor of the documented manual checks.
+No application servers were started for verification. Local commits do not
+approve a push or merge; passing compilation is not live verification.
+
+Run from `ui/`:
+
+```bash
+bun run typecheck
+bun run check
+bun --bun run build
+```
+
+`bun run fix` applies safe fixes/formatting; review changes. `lint` and `format`
+check their respective rules. From `server/`:
+
+```bash
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+```
+
+Before merging:
+
+- [ ] Fix UI lint/formatting without stripping BoardUI or adding unrelated auth.
+- [ ] Rerun the full UI checks/build; rerun backend checks if backend changes.
+- [ ] Complete [auth/profile manual checks](auth.md#manual-verification), including
+  direct visits, expiry, two tabs, logout ordering, transient errors, and switching
+  accounts.
+- [ ] Review intended files; exclude real environment/browser secrets, build
+  output, and unrelated user work.
+- [ ] Commit/merge only when requested and checks are accepted.
