@@ -1,3 +1,13 @@
 /target/
 server/.env
 target/
+ui/node_modules/
+ui/dist/
+ui/.env
+ui/.tanstack
+.agents
+skills-lock.json
+ui/.cta.json
+.env
+.env.*
+!.env.example
