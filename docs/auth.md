@@ -37,18 +37,32 @@ the sidebar does not use IndexedDB presence as proof of authentication.
 
 ## Profile
 
-`GET /api/profile` uses shared access-JWT middleware, then selects the email from
+Google-initialized profiles are implemented. Editing, self-hosted Rust media
+uploads, account deletion, and outstanding live checks are tracked in the ordered
+[profile TODO](architecture.md#profile-implementation-todo).
+
+`GET /api/profile` uses shared access-JWT middleware, then selects the profile from
 `accounts` using only the verified account ID. It returns `Cache-Control: no-store`:
 
 ```json
 {
   "account_id": "account UUID",
-  "email": "person@example.com"
+  "email": "person@example.com",
+  "name": "Person",
+  "avatar_url": "https://example.com/profile/default-profile.webp",
+  "cover_url": "https://example.com/profile/cover-2.webp"
 }
 ```
 
+At account creation, verified optional Google name/photo claims initialize the
+required `name`/`avatar_url` fields; missing values use `Account` and the bundled
+default avatar, and photo URLs must be HTTPS without embedded credentials.
+`cover_url` is randomly selected from three bundled covers. Bundled URLs use the
+configured UI origin. Later sign-ins update email only, preserving saved profile
+values. There are no separate Google-default/override fields.
+
 No query/body parameter selects an account. No session-table read, cookie change,
-session ID, Google subject, display name, or photo is part of this response.
+session ID, or Google subject is part of this response.
 The `/profile` frontend page and profile editing are still planned.
 
 | Failure | Result |
@@ -64,15 +78,15 @@ Query abort signal. It uses `["account", "current"]`, a 60-second stale time, th
 global retry defaults, and no polling.
 
 `AccountMenu.tsx` owns the query and one logout hook. It shows a skeleton, the real
-email/initial avatar, or an unavailable state with retry inside its popover.
+name/email/avatar, or an unavailable state with retry inside its popover.
 Account Details above the red Sign out button opens a profile-only modal. Its
-edge-to-edge placeholder cover/avatar and “Your name” label are not fetched account
-data; name/profile-image/cover edit controls and Delete account are disabled until
-supported. No upload or account-deletion request is sent. Email uses this same query
-and is read-only, with a loading skeleton/unavailable fallback. No profile writes
-are implemented. The branding footer is hidden. Theme/logout remain usable while data loads
-or fails. The shell/page never waits for this query; more consumers should reuse
-its options/cache.
+edge-to-edge cover, overlapping avatar, and name use the same profile query.
+Failed avatar loads show initials, and missing/failed cover images retain the
+semantic background. Name/profile-image/cover edit controls and Delete account
+remain disabled. No profile write, upload, or account-deletion request is sent.
+Email is read-only, with a loading skeleton/unavailable fallback. The branding
+footer is hidden. Theme/logout remain usable while data loads or fails. The
+shell/page never waits for this query; more consumers should reuse its options/cache.
 
 ## Protected requests and shared errors
 
@@ -230,9 +244,14 @@ keep DevTools Network logs, but never publish copied credentials/proofs.
 ### Login, profile, and errors
 
 - Sign in; `/analytics` renders immediately and the account skeleton becomes the
-  correct email. Profile returns the correct UUID/email with `no-store`, no JWT,
+  correct name/email/avatar. Profile returns the correct UUID/email/name/avatar
+  URL/cover URL with `no-store`, no JWT,
   session ID, or Google subject. A query parameter naming another account must
   not change the result; a second Google account must return its own profile.
+- Check that a new account receives one of the three bundled covers and that the
+  same saved cover survives reloads and later sign-ins. Check missing Google
+  claims, bundled asset URLs, failed-avatar initials, cover-background fallback,
+  and consistent sidebar/modal data. Editing/deletion controls stay disabled.
 - Remove access and refresh cookies, then reload: shared cleanup/login navigation,
   without a loop or old cached identity. The empty shell may appear briefly.
 - With a disposable account and valid access cookie, delete its account row:

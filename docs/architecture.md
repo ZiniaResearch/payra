@@ -14,6 +14,8 @@ Implemented:
 - Local access-JWT middleware without session-table reads, protected
   `GET /api/profile`, shared terminal Query/Mutation auth-error handling, and
   session-ended tab synchronization.
+- Google-initialized name/avatar, a randomly selected bundled cover, and shared
+  profile reads for the sidebar and modal. Later sign-ins preserve saved values.
 - Full source-owned BoardUI sidebar, independent account skeleton/email/retry UI,
   theme controls, and one mounted signed-logout hook.
 - Client-rendered pathless `_protected` layout with empty Schedule SMS, Messages,
@@ -27,7 +29,7 @@ Deferred:
 | --- | --- |
 | Header/mobile navigation | `Header.tsx` is an unused stub; no integration or mobile drawer. |
 | Workspace/settings/support | Sidebar UI is installed; product actions are not connected or persisted. |
-| Profile | Email/ID read only; no editing, display-name/photo storage, or `/profile` page. |
+| Profile | Saved name/avatar/cover and email/ID read; no editing, uploads, deletion, or `/profile` page. |
 | Product pages | `/` is a public placeholder. Scheduling/messages/billing/analytics routes have empty shells only. Pricing, consent, recipients, and product data/UI remain planned. |
 | Scheduling/payments | No worker, scheduling/credit/payment APIs, provider integrations, or product migrations; billing currently has only a frontend page shell. |
 | Deployment/hardening | No application Dockerfiles/Caddy stack, worker/migration subcommands, scheduled cleanup, auth rate limits, or automated auth regression coverage. |
@@ -117,7 +119,7 @@ server/
         └── profile/
             ├── mod.rs
             ├── routes.rs       Profile response/error mapping
-            └── repository.rs   Account-scoped email read
+            └── repository.rs   Account-scoped profile read
 ```
 
 `main.rs` supplies pool, Google verifier, token signer, UI origin, and configured
@@ -220,9 +222,10 @@ theme controls, and popovers. Payra supplies actual navigation/account contents
 through `modules/layout/Sidebar.tsx`. The top popover represents Payra; the bottom
 shows real email/loading/unavailable state, Account Details, retry, and a red
 BoardUI Sign out button without a branding footer. Account Details opens a
-profile-only BoardUI modal with a centered placeholder avatar overlapping an
-edge-to-edge placeholder cover halfway, a name placeholder/edit pen, and the
-read-only email. A cover edit control sits at the cover's bottom-right, and a
+profile-only BoardUI modal with the saved avatar overlapping an edge-to-edge
+cover halfway, the saved name/edit pen, and the read-only email. Failed avatar
+images fall back to initials; missing/failed covers retain a semantic background.
+A cover edit control sits at the cover's bottom-right, and a
 red Delete account button sits at the modal's bottom-right. Name/image editing
 and deletion stay disabled until supported; there is no navigation rail.
 One account instance mounts tab
@@ -249,16 +252,21 @@ runs the same build as `build`, not a separate route-only generator.
 | `POST /api/auth/google` | Google code/public key → cookies and session/hash metadata. |
 | `POST /api/auth/refresh` | Signed proof → rotated cookies and session/hash metadata. |
 | `POST /api/auth/logout` | Signed proof → end one login, clear cookies, 204. |
-| `GET /api/profile` | Verified account → `{ account_id, email }`, `no-store`. |
+| `GET /api/profile` | Verified account → `{ account_id, email, name, avatar_url, cover_url }`, `no-store`. |
 
 Auth routes/health are outside access middleware; profile is inside it. The old
 identity-demo endpoint is removed. Detailed failures and security boundaries are
 in [authentication](auth.md).
 
-Only `accounts` (UUIDv7 ID, unique Google subject, email, creation time) and
+Only `accounts` (UUIDv7 ID, unique Google subject, email, required name/avatar URL/
+cover URL, creation time) and
 `auth_sessions` (account FK/cascade, public key, positive counter, deadlines,
-constraints/index) exist. Display names, photos, time zones, and sending holds
-are not stored yet.
+constraints/index) exist. First login saves the verified Google name/photo or
+`Account`/the bundled default avatar and randomly selects one of three bundled
+covers. URLs for bundled assets use the configured UI origin. Later logins update
+email only; no separate Google-default/override columns are stored. The new
+required columns target fresh development accounts, not a production backfill.
+Time zones and sending holds are not stored yet.
 
 ### Planned product APIs and schema
 
@@ -295,6 +303,105 @@ The planned milestones are one scheduled text, credit/concurrency guarantees,
 sandbox wallet checkout, then live SMS/deployment; acceptance rules are in
 [system design](system-design.md#launch-checks).
 
+## Profile implementation TODO
+
+Implement these stages in order, one step at a time. Checked items are implemented
+in code, not live-verified. Editing/deletion controls remain disabled.
+
+### 1. Google defaults and profile read
+
+- [x] Capture optional name/photo claims from the verified Google identity; retain
+  default name/avatar and failed-image initials fallbacks.
+- [x] Add required `name`, `avatar_url`, and `cover_url` columns for fresh
+  development accounts; initialize them at account creation, without a backfill.
+- [x] Preserve saved name/avatar/cover on later sign-ins by updating email only.
+  Keep email read-only.
+- [x] Expand `GET /api/profile` to return
+  `{ account_id, email, name, avatar_url, cover_url }`.
+- [x] Render the saved profile in the sidebar and modal through the existing
+  shared account query, without blocking page rendering.
+- [ ] Manually verify first login, default assets, failed photos, reloads,
+  repeat sign-ins, and switching accounts.
+
+### 2. Name editing and preset covers
+
+- [x] Bundle a default avatar and three cover images under `ui/public/profile/`;
+  randomly choose a cover on account creation.
+- [ ] Define the server-validated cover URL allowlist for editing. Covers are
+  selected from our presets, not uploaded or arbitrary URLs.
+- [ ] Implement proposed `PATCH /api/profile` for name and cover URL, with
+  server-side trimming/length checks, preset validation, account isolation, and
+  deliberate active-session/origin checks for writes.
+- [ ] Add BoardUI name and cover editors with Save/Cancel, pending/error states,
+  and shared profile-cache updates after successful saves.
+- [ ] Put reads in `ui/src/modules/auth/queries.ts` and writes in a new
+  `mutations.ts`; keep route composition and generic BoardUI components separate.
+  Extend CORS for the required PATCH, PUT, and DELETE methods as endpoints land.
+
+### 3. Self-hosted Rust media service and avatar uploads
+
+- [ ] Evaluate and select an efficient, open-source Rust media upload
+  service/application supporting images and videos. No project is selected yet.
+  Check licensing, maintenance, authenticated upload/delete APIs, processing,
+  resource limits, storage, and reliable deletion before choosing.
+- [ ] Deploy it as a separate service on our VPS with persistent storage, HTTPS,
+  private management credentials/network access, quotas, backups, monitoring, and
+  a documented update/restore procedure. This replaces the earlier direct
+  S3-compatible-storage recommendation; finalize storage behind the chosen service.
+- [ ] Define Payra-to-media authentication and account ownership. Clients must
+  not receive service-admin credentials or choose another account's media key.
+  Require authenticated, authorized uploads and deletion. Keep display URLs in
+  `avatar_url` and retain any service-specific identifier needed for reliable cleanup.
+- [ ] Implement proposed `PUT /api/profile/avatar` through the selected service:
+  enforce byte/dimension limits, verify decoded content, initially allow
+  JPEG/PNG/WebP rather than SVG, re-encode/strip metadata, and generate media keys
+  server-side. Bound processing time/memory and configure image/video limits.
+- [ ] Add BoardUI file selection, preview/crop, upload progress/pending/errors,
+  and effective-profile cache updates. Save owned media references in PostgreSQL,
+  not binary files or uploads in Git.
+- [ ] Handle failed uploads/database writes, abandoned files, and avatar
+  replacement with durable cleanup retries and concurrency-safe ownership checks.
+- [ ] Verify image and video upload/delete support in the media service and
+  document future video integration; this stage enables avatars, not a new
+  product video-upload feature.
+
+### 4. Account deletion
+
+- [ ] Define deletion scope and retention: remove live account-owned profile,
+  sessions, uploads, and future messages/recipients/jobs; explicitly document
+  backup expiry and any legally retained payment records.
+- [ ] Add a BoardUI destructive confirmation explaining irreversibility, requiring
+  typed `DELETE` and fresh Google reauthentication, with pending/error states.
+- [ ] Implement proposed `DELETE /api/profile`: verify a fresh Google code matches
+  the current account subject; check Origin/required request header and the active
+  session. Deliberately expose the already-validated JWT session ID for sensitive
+  writes; keep ordinary access middleware database-free.
+- [ ] Transactionally record durable media-cleanup jobs, delete account-owned
+  data/sessions, and cancel queued work. Define cascade/locking rules as each
+  product table is added so deletion cannot race with new writes or dispatch.
+- [ ] Ensure cleanup jobs survive account deletion and retry external media
+  deletion failures. Database deletion and media deletion cannot share a
+  transaction; document pending cleanup rather than claiming immediate removal.
+- [ ] After committed deletion, clear cookies and reuse existing browser-key,
+  Query/Router cache, and session-ended tab cleanup/navigation. Handle an already
+  deleted account safely; do not add request-session tracking, login generations,
+  or session-started notifications.
+- [ ] Prevent still-valid access JWTs from authorizing sensitive actions against
+  deleted accounts/sessions. Explain that Payra deletion does not delete Google
+  and that signing in again normally creates a new, empty account.
+
+### 5. Manual verification
+
+- [ ] Verify Google defaults/missing claims, fresh-account initialization, read-only
+  email, edit persistence across sign-ins, preset validation, and sidebar/modal
+  cache consistency.
+- [ ] Check account isolation, expired/revoked sessions, upload validation/limits,
+  service outages, interrupted/replaced uploads, concurrent edits, and eventual
+  orphan/replacement cleanup.
+- [ ] Verify fresh reauthentication and subject matching, deletion across all
+  sessions/tabs, stale JWT rejection for sensitive actions, concurrent work,
+  cleanup retries, retention disclosures, and empty-account re-registration.
+
 ## Docker and VPS
 
 Current Compose runs only PostgreSQL; everything here is planned:
@@ -316,8 +423,8 @@ Current Compose runs only PostgreSQL; everything here is planned:
 
 ## Verification and merge checklist
 
-Snapshot: 2026-11-17. Backend formatting/strict Clippy, UI TypeScript, formatting,
-and the production client/server build pass after template-asset cleanup. Full
+Snapshot: 2026-11-19. Backend formatting/strict Clippy, UI TypeScript, targeted
+formatting/lint, and the production client/server build pass after profile wiring. Full
 Biome still reports **20 errors and 3 warnings** in installed BoardUI components.
 Live auth/profile/cross-tab verification remains outstanding.
 
