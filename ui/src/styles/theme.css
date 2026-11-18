@@ -191,6 +191,7 @@
 
 	/* Background */
 	--color-background-full: var(--color-white);
+	--color-background-overlay: var(--color-black);
 	/* Ticket detail, Figma 4509:12272. The raw #fafafa surface matches neutral/50. */
 	--color-ticket-detail-surface: var(--color-white);
 	--color-ticket-detail-low-background: var(--color-indigo-200);
@@ -878,6 +879,7 @@
 	--color-text-white: var(--color-text-white);
 
 	--color-background-full: var(--color-background-full);
+	--color-background-overlay: var(--color-background-overlay);
 	--color-ticket-detail-surface: var(--color-ticket-detail-surface);
 	--color-ticket-detail-low-background: var(
 		--color-ticket-detail-low-background
