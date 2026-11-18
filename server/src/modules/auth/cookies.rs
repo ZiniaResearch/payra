@@ -1,5 +1,3 @@
-//! Builds authentication cookies without exposing JWTs in response JSON.
-
 use super::tokens::IssuedTokens;
 use axum::http::{
     HeaderMap, HeaderValue,
@@ -15,10 +13,6 @@ pub(super) const REFRESH_COOKIE_PATH: &str = "/api/auth";
 #[derive(Debug)]
 pub(super) struct InvalidCookie;
 
-/// Reads one server-issued cookie, rejecting empty or duplicate credentials.
-///
-/// This shared parser handles multiple Cookie headers without guessing between
-/// different tokens using the same name.
 pub(super) fn read_cookie<'a>(
     headers: &'a HeaderMap,
     name: &str,
@@ -44,7 +38,6 @@ pub(super) fn read_cookie<'a>(
     Ok(token)
 }
 
-/// Clears both cookies with the same names, paths, and security attributes.
 pub(super) fn clear_session_cookie_headers() -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.append(
@@ -62,9 +55,6 @@ pub(super) fn clear_session_cookie_headers() -> HeaderMap {
     headers
 }
 
-/// Builds separate access and refresh Set-Cookie headers.
-///
-/// append preserves both headers; insert would replace the first cookie.
 pub(super) fn session_cookie_headers(
     tokens: &IssuedTokens,
 ) -> Result<HeaderMap, InvalidHeaderValue> {
@@ -96,9 +86,6 @@ pub(super) fn session_cookie_headers(
     Ok(headers)
 }
 
-/// Formats one server-issued JWT as a host-only, HttpOnly cookie.
-///
-/// Header values cannot contain line breaks, so keep the cookie on one line.
 fn token_cookie(
     name: &str,
     token: &str,

@@ -1,8 +1,3 @@
-//! Login, refresh, and logout routes. JWTs are only delivered in HttpOnly cookies.
-//!
-//! Response JSON contains only the session ID and refresh-token fingerprint.
-//! The actual access and refresh JWTs are delivered in HttpOnly cookies.
-
 use super::{browser_key, cookies, google::VerifyError, logout, refresh, repository};
 use crate::state::AppState;
 use axum::{
@@ -24,15 +19,12 @@ struct GoogleLoginRequest {
     browser_public_key: Value,
 }
 
-// This is intentionally separate from IssuedTokens so raw JWTs cannot
-// accidentally be included in the JSON sent to browser JavaScript.
 #[derive(Serialize)]
 pub(super) struct SessionResponse {
     pub(super) session_id: String,
     pub(super) refresh_token_hash: String,
 }
 
-/// Refresh stays outside access-JWT middleware so expired access can be renewed.
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/auth/google", post(google_login))
@@ -46,10 +38,6 @@ pub(crate) fn routes() -> Router<AppState> {
         )
 }
 
-/// Verifies Google identity and binds a new session to the browser public key.
-///
-/// On success, returns HTTP 200 with two cookies and non-secret metadata.
-/// On failure, returns an HTTP error without issuing authentication cookies.
 async fn google_login(
     State(state): State<AppState>,
     headers: HeaderMap,

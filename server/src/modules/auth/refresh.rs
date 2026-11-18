@@ -56,7 +56,6 @@ impl IntoResponse for RefreshRejection {
             ),
         };
 
-        // Invalid proofs alone do not clear a legitimate browser's cookies.
         let mut headers = if clear_cookies {
             cookies::clear_session_cookie_headers()
         } else {
@@ -105,7 +104,6 @@ pub(super) async fn refresh(
         .map_err(|_| RefreshRejection::Unavailable)?
         .ok_or(RefreshRejection::MissingSession)?;
 
-    // Check after acquiring the lock, not before waiting for another refresh.
     let now = Utc::now();
     if session.idle_expires_at <= now || session.absolute_expires_at <= now {
         return Err(RefreshRejection::ExpiredSession);

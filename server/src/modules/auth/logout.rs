@@ -1,8 +1,3 @@
-//! Ends one browser login without rotating tokens or checking access credentials.
-//!
-//! A live session is deleted only after checking its refresh JWT and a fresh,
-//! logout-specific browser proof. Cookie removal follows the database commit.
-
 use super::{cookies, proof, repository};
 use crate::state::AppState;
 use axum::{
@@ -37,7 +32,6 @@ struct ErrorResponse {
 }
 
 impl IntoResponse for LogoutRejection {
-    /// Failed verification must not clear legitimate cookies or delete a session.
     fn into_response(self) -> Response {
         let (status, error) = match self {
             Self::Forbidden => (StatusCode::FORBIDDEN, "logout_forbidden"),
@@ -55,11 +49,6 @@ impl IntoResponse for LogoutRejection {
     }
 }
 
-/// Signs out an already-ended login or deletes a session after proof verification.
-///
-/// Missing/expired refresh cookies only clear local cookies; no row is targeted.
-/// A valid cookie naming an already-deleted row also succeeds, so a lost response
-/// can be retried without rotating a token or resurrecting the login.
 pub(super) async fn logout(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -81,8 +70,6 @@ pub(super) async fn logout(
     };
     let identity = match state.token_signer.verify_refresh(refresh_token) {
         Ok(identity) => identity,
-        // No refresh authority remains in this cookie. Clear the browser state,
-        // but do not claim to have deleted a row using expired credentials.
         Err(error) if matches!(error.kind(), ErrorKind::ExpiredSignature) => {
             return Ok(signed_out_response());
         }
@@ -113,8 +100,6 @@ pub(super) async fn logout(
             return Err(LogoutRejection::FutureCounter);
         }
 
-        // Even an older valid token plus its matching logout proof authorizes
-        // ending this login. Unlike refresh, logout never increments the counter.
         repository::delete_session(&mut transaction, session.id)
             .await
             .map_err(|_| LogoutRejection::Unavailable)?;
@@ -127,7 +112,6 @@ pub(super) async fn logout(
     Ok(signed_out_response())
 }
 
-/// Clears both host-only cookies using the exact original paths and flags.
 fn signed_out_response() -> Response {
     let mut headers = cookies::clear_session_cookie_headers();
     headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
