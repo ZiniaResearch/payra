@@ -1,5 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
-import type { HTMLAttributes, Ref } from "react";
+import { type HTMLAttributes, type Ref, useState } from "react";
+
 import { cx, sortCx } from "@/utils/cx";
 
 /**
@@ -60,6 +61,8 @@ export function Avatar({
 	ref,
 	...props
 }: AvatarProps) {
+	const [failedSrc, setFailedSrc] = useState<string | undefined>();
+
 	return (
 		<span
 			ref={ref}
@@ -71,12 +74,14 @@ export function Avatar({
 			)}
 			{...props}
 		>
-			{src ? (
+			{src && src !== failedSrc ? (
 				<img
 					src={src}
 					alt={alt ?? ""}
 					loading="lazy"
 					decoding="async"
+					referrerPolicy="no-referrer"
+					onError={() => setFailedSrc(src)}
 					className="size-full object-cover"
 				/>
 			) : (
