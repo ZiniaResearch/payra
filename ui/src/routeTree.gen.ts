@@ -13,6 +13,9 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProtectedRouteRouteImport } from './routes/_protected/route'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ProtectedAnalyticsRouteImport } from './routes/_protected/analytics'
+import { Route as ProtectedBillingRouteImport } from './routes/_protected/billing'
+import { Route as ProtectedMessagesIndexRouteImport } from './routes/_protected/messages/index'
+import { Route as ProtectedMessagesNewRouteImport } from './routes/_protected/messages/new'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -33,16 +36,37 @@ const ProtectedAnalyticsRoute = ProtectedAnalyticsRouteImport.update({
   path: '/analytics',
   getParentRoute: () => ProtectedRouteRoute,
 } as any)
+const ProtectedBillingRoute = ProtectedBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
+  getParentRoute: () => ProtectedRouteRoute,
+} as any)
+const ProtectedMessagesIndexRoute = ProtectedMessagesIndexRouteImport.update({
+  id: '/messages/',
+  path: '/messages/',
+  getParentRoute: () => ProtectedRouteRoute,
+} as any)
+const ProtectedMessagesNewRoute = ProtectedMessagesNewRouteImport.update({
+  id: '/messages/new',
+  path: '/messages/new',
+  getParentRoute: () => ProtectedRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/analytics': typeof ProtectedAnalyticsRoute
+  '/billing': typeof ProtectedBillingRoute
+  '/messages/new': typeof ProtectedMessagesNewRoute
+  '/messages/': typeof ProtectedMessagesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/analytics': typeof ProtectedAnalyticsRoute
+  '/billing': typeof ProtectedBillingRoute
+  '/messages/new': typeof ProtectedMessagesNewRoute
+  '/messages': typeof ProtectedMessagesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -50,13 +74,25 @@ export interface FileRoutesById {
   '/_protected': typeof ProtectedRouteRouteWithChildren
   '/login': typeof LoginRoute
   '/_protected/analytics': typeof ProtectedAnalyticsRoute
+  '/_protected/billing': typeof ProtectedBillingRoute
+  '/_protected/messages/new': typeof ProtectedMessagesNewRoute
+  '/_protected/messages/': typeof ProtectedMessagesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/analytics'
+  fullPaths:
+    '/' | '/login' | '/analytics' | '/billing' | '/messages/new' | '/messages/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/analytics'
-  id: '__root__' | '/' | '/_protected' | '/login' | '/_protected/analytics'
+  to: '/' | '/login' | '/analytics' | '/billing' | '/messages/new' | '/messages'
+  id:
+    | '__root__'
+    | '/'
+    | '/_protected'
+    | '/login'
+    | '/_protected/analytics'
+    | '/_protected/billing'
+    | '/_protected/messages/new'
+    | '/_protected/messages/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -95,15 +131,42 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedAnalyticsRouteImport
       parentRoute: typeof ProtectedRouteRoute
     }
+    '/_protected/billing': {
+      id: '/_protected/billing'
+      path: '/billing'
+      fullPath: '/billing'
+      preLoaderRoute: typeof ProtectedBillingRouteImport
+      parentRoute: typeof ProtectedRouteRoute
+    }
+    '/_protected/messages/': {
+      id: '/_protected/messages/'
+      path: '/messages'
+      fullPath: '/messages/'
+      preLoaderRoute: typeof ProtectedMessagesIndexRouteImport
+      parentRoute: typeof ProtectedRouteRoute
+    }
+    '/_protected/messages/new': {
+      id: '/_protected/messages/new'
+      path: '/messages/new'
+      fullPath: '/messages/new'
+      preLoaderRoute: typeof ProtectedMessagesNewRouteImport
+      parentRoute: typeof ProtectedRouteRoute
+    }
   }
 }
 
 interface ProtectedRouteRouteChildren {
   ProtectedAnalyticsRoute: typeof ProtectedAnalyticsRoute
+  ProtectedBillingRoute: typeof ProtectedBillingRoute
+  ProtectedMessagesNewRoute: typeof ProtectedMessagesNewRoute
+  ProtectedMessagesIndexRoute: typeof ProtectedMessagesIndexRoute
 }
 
 const ProtectedRouteRouteChildren: ProtectedRouteRouteChildren = {
   ProtectedAnalyticsRoute: ProtectedAnalyticsRoute,
+  ProtectedBillingRoute: ProtectedBillingRoute,
+  ProtectedMessagesNewRoute: ProtectedMessagesNewRoute,
+  ProtectedMessagesIndexRoute: ProtectedMessagesIndexRoute,
 }
 
 const ProtectedRouteRouteWithChildren = ProtectedRouteRoute._addFileChildren(
