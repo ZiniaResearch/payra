@@ -203,10 +203,12 @@ not layout grouping or local storage.
 The full BoardUI sidebar keeps animated collapse, `Cmd/Ctrl+K` navigation search,
 theme controls, and popovers. Payra supplies actual navigation/account contents
 through `modules/layout/Sidebar.tsx`. The top popover represents Payra; the bottom
-shows real email/loading/unavailable state and offers retry/logout. One account
-instance mounts tab synchronization. Header/mobile drawer are deferred; installed
-workspace/settings examples are not real account/team data or saved settings,
-and Support is unconnected.
+shows real email/loading/unavailable state, Account Details, retry, and a red
+BoardUI Sign out button without a branding footer. Account Details opens a
+profile-only BoardUI modal containing just a “Profile” heading for now, with no
+navigation rail or editable fields. One account instance mounts tab
+synchronization. Header/mobile drawer are deferred. Support/Settings rows are
+removed; installed workspace/settings examples are not saved product features.
 
 Unused template image assets are removed. Generic fallback avatars/file icons
 use initials/Remix icons; optional artwork can be supplied when actually needed.
