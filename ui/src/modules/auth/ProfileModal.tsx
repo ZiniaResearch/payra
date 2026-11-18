@@ -16,15 +16,24 @@ type ProfileModalProps = Pick<
 	ComponentProps<typeof Modal>,
 	"isOpen" | "onOpenChange"
 > & {
+	name?: string;
+	avatarUrl?: string;
+	coverUrl?: string;
 	email?: string;
 	isLoading?: boolean;
 };
 
 export function ProfileModal({
+	name,
+	avatarUrl,
+	coverUrl,
 	email,
 	isLoading = false,
 	...props
 }: ProfileModalProps) {
+	const initials =
+		Array.from(name?.trim() ?? "")[0]?.toLocaleUpperCase() ?? "?";
+
 	return (
 		<Modal
 			{...props}
@@ -48,7 +57,12 @@ export function ProfileModal({
 							<div className="relative mb-14">
 								<div
 									aria-hidden
-									className="h-40 bg-background-tertiary-default"
+									className="h-40 bg-background-tertiary-default bg-cover bg-center"
+									style={{
+										backgroundImage: coverUrl
+											? `url(${JSON.stringify(coverUrl)})`
+											: undefined,
+									}}
 								/>
 								<IconButton
 									icon={RiEditLine}
@@ -62,8 +76,10 @@ export function ProfileModal({
 									<div className="relative">
 										<Avatar
 											role="img"
-											aria-label="Profile image placeholder"
-											initials="?"
+											aria-label="Profile image"
+											src={avatarUrl}
+											alt=""
+											initials={initials}
 											className="size-28 border-4 border-background-secondary-default text-title-2-medium"
 										/>
 										<IconButton
@@ -79,8 +95,13 @@ export function ProfileModal({
 							</div>
 							<div className="flex flex-col items-center gap-8 px-6 pb-6">
 								<div className="flex items-center justify-center gap-2">
-									<h2 className="text-headline-medium text-text-placeholder">
-										Your name
+									<h2 className="min-w-0 break-words text-center text-headline-medium text-text-primary">
+										<bdi>
+											{name ??
+												(isLoading
+													? "Loading account…"
+													: "Account unavailable")}
+										</bdi>
 									</h2>
 									<IconButton
 										icon={RiEditLine}

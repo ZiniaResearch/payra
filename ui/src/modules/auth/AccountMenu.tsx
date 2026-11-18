@@ -1,6 +1,7 @@
 import { RiLogoutBoxRLine, RiShieldUserLine } from "@remixicon/react";
 import { useQuery } from "@tanstack/react-query";
 import { type ComponentProps, useState } from "react";
+
 import { DashboardTeamMenu } from "@/components/application/dashboard/dashboard-team-menu";
 import { Avatar } from "@/components/base/avatar/avatar";
 import { Button } from "@/components/base/buttons/button";
@@ -18,17 +19,24 @@ export function AccountMenu({
 	const { logout, pending, error } = useLogout();
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [profileOpen, setProfileOpen] = useState(false);
+
 	const name = account.data
-		? "Account"
+		? account.data.name
 		: account.isPending
 			? "Loading account"
 			: "Account unavailable";
+
+	const initials =
+		Array.from(account.data?.name.trim() ?? "")[0]?.toLocaleUpperCase() ?? "?";
+
 	const avatar = account.isPending ? (
 		<Skeleton shape="circle" className="size-8 shrink-0" />
 	) : (
 		<Avatar
 			size="md"
-			initials={account.data?.email.slice(0, 1).toLocaleUpperCase() ?? "!"}
+			src={account.data?.avatar_url}
+			alt={`${name}'s profile image`}
+			initials={initials}
 		/>
 	);
 
@@ -108,6 +116,9 @@ export function AccountMenu({
 			<ProfileModal
 				isOpen={profileOpen}
 				onOpenChange={setProfileOpen}
+				name={account.data?.name}
+				avatarUrl={account.data?.avatar_url}
+				coverUrl={account.data?.cover_url}
 				email={account.data?.email}
 				isLoading={account.isPending}
 			/>
