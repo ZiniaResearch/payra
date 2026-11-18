@@ -70,11 +70,44 @@ async fn google_login(
             return Err(StatusCode::SERVICE_UNAVAILABLE);
         }
     };
+    let ui_origin = state
+        .ui_origin
+        .to_str()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .trim_end_matches('/');
+
+    let default_avatar_url = format!("{ui_origin}/profile/default-profile.webp");
+
+    let cover_urls = [1, 2, 3].map(|number| format!("{ui_origin}/profile/cover-{number}.webp"));
+
+    let name = identity
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or("Account");
+
+    let avatar_url = identity
+        .picture
+        .as_deref()
+        .map(str::trim)
+        .filter(|picture| {
+            reqwest::Url::parse(picture).is_ok_and(|url| {
+                url.scheme() == "https"
+                    && url.host_str().is_some()
+                    && url.username().is_empty()
+                    && url.password().is_none()
+            })
+        })
+        .unwrap_or(default_avatar_url.as_str());
 
     let account_id = match repository::find_or_create_google_account(
         &state.pool,
         &identity.sub,
         &identity.email,
+        name,
+        avatar_url,
+        &cover_urls,
     )
     .await
     {
