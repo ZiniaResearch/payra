@@ -33,12 +33,6 @@ export function Sidebar() {
 				</DashboardUserMenu>
 			)}
 			renderTeamMenu={(props) => <AccountMenu {...props} />}
-			settingsContent={
-				<p className="py-4 text-body-regular text-text-secondary">
-					Account settings are not available yet. Appearance can be changed in
-					the sidebar.
-				</p>
-			}
 		/>
 	);
 }
