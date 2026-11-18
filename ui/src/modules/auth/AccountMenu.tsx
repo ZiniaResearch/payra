@@ -105,7 +105,12 @@ export function AccountMenu({
 					)}
 				</div>
 			</DashboardTeamMenu>
-			<ProfileModal isOpen={profileOpen} onOpenChange={setProfileOpen} />
+			<ProfileModal
+				isOpen={profileOpen}
+				onOpenChange={setProfileOpen}
+				email={account.data?.email}
+				isLoading={account.isPending}
+			/>
 		</>
 	);
 }
