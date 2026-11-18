@@ -65,9 +65,12 @@ global retry defaults, and no polling.
 
 `AccountMenu.tsx` owns the query and one logout hook. It shows a skeleton, the real
 email/initial avatar, or an unavailable state with retry inside its popover.
-Account Details above the red Sign out button opens a profile-only modal with a
-“Profile” placeholder heading; no profile fields or writes are implemented there
-yet. The branding footer is hidden. Theme/logout remain usable while data loads
+Account Details above the red Sign out button opens a profile-only modal. Its
+edge-to-edge placeholder cover/avatar and “Your name” label are not fetched account
+data; name/profile-image/cover edit controls and Delete account are disabled until
+supported. No upload or account-deletion request is sent. Email uses this same query
+and is read-only, with a loading skeleton/unavailable fallback. No profile writes
+are implemented. The branding footer is hidden. Theme/logout remain usable while data loads
 or fails. The shell/page never waits for this query; more consumers should reuse
 its options/cache.
 

@@ -16,8 +16,9 @@ Implemented:
   session-ended tab synchronization.
 - Full source-owned BoardUI sidebar, independent account skeleton/email/retry UI,
   theme controls, and one mounted signed-logout hook.
-- Client-rendered pathless `_protected` layout and initially empty `/analytics`,
-  without a blocking auth loader, IndexedDB-presence gate, or identity-demo API.
+- Client-rendered pathless `_protected` layout with empty Schedule SMS, Messages,
+  Analytics, and Buy Credits page shells, without a blocking auth loader,
+  IndexedDB-presence gate, or identity-demo API.
 - PostgreSQL 18 Compose service and account/session migrations.
 
 Deferred:
@@ -27,8 +28,8 @@ Deferred:
 | Header/mobile navigation | `Header.tsx` is an unused stub; no integration or mobile drawer. |
 | Workspace/settings/support | Sidebar UI is installed; product actions are not connected or persisted. |
 | Profile | Email/ID read only; no editing, display-name/photo storage, or `/profile` page. |
-| Product pages | `/` is a public placeholder. Pricing, consent, messages, recipients, billing, and analytics data are planned. |
-| Scheduling/payments | No worker, credit/billing modules, provider integrations, or product migrations. |
+| Product pages | `/` is a public placeholder. Scheduling/messages/billing/analytics routes have empty shells only. Pricing, consent, recipients, and product data/UI remain planned. |
+| Scheduling/payments | No worker, scheduling/credit/payment APIs, provider integrations, or product migrations; billing currently has only a frontend page shell. |
 | Deployment/hardening | No application Dockerfiles/Caddy stack, worker/migration subcommands, scheduled cleanup, auth rate limits, or automated auth regression coverage. |
 
 No request-session tracker, per-login generation, additional cancellation
@@ -142,7 +143,11 @@ ui/src/
 │   ├── login.tsx                    /login
 │   └── _protected/
 │       ├── route.tsx                Sidebar and Outlet; ssr: false
-│       └── analytics.tsx            /analytics
+│       ├── analytics.tsx            /analytics
+│       ├── billing.tsx              /billing — Buy Credits shell
+│       └── messages/
+│           ├── index.tsx            /messages — list shell
+│           └── new.tsx              /messages/new — Schedule SMS shell
 ├── modules/
 │   ├── layout/
 │   │   ├── Sidebar.tsx              Payra navigation/composition
@@ -157,8 +162,13 @@ ui/src/
 │   │   ├── use-logout.ts            Action and private tab-sync hook
 │   │   ├── handle-auth-failure.ts
 │   │   └── ...                     Browser keys, storage, proofs, events
-│   └── analytics/
-│       └── AnalyticsPage.tsx        Initially empty
+│   ├── analytics/
+│   │   └── AnalyticsPage.tsx        Initially empty
+│   ├── messages/
+│   │   ├── MessagesPage.tsx         Empty list shell
+│   │   └── ScheduleMessagePage.tsx  Empty scheduling shell
+│   └── billing/
+│       └── BuyCreditsPage.tsx       Empty credits shell
 ├── components/                      Source-owned BoardUI application/base/foundations
 ├── shared/api/
 │   ├── client.ts                    Bare Axios client
@@ -185,11 +195,16 @@ ui/src/
 `queries.ts`/`mutations.ts`; extract helpers only for genuine reuse. No mutation
 file is needed for the profile read.
 
-Planned pages use independent `/profile`, `/messages`, `/messages/new`,
-`/messages/:messageId`, `/recipients`, and `/billing` URLs under the pathless layout,
-not a dashboard prefix. Pricing and `/consent/:token` are planned public pages.
-Add their modules/UI/read-write files only when implemented. The existing profile
-API does not mean the `/profile` page exists.
+The sidebar order is **Schedule SMS** (`/messages/new`), **Messages** (`/messages`),
+**Analytics** (`/analytics`), then **Buy Credits** (`/billing`). These independent
+routes are empty page shells under the pathless layout, not a dashboard prefix.
+Trailing slashes are normalized for sidebar selection. Scheduling, message
+statuses/data, and credit purchase UI are not implemented; no new API calls are
+made by these shells.
+
+`/profile`, `/messages/:messageId`, and `/recipients` remain planned protected
+pages; pricing and `/consent/:token` are planned public pages. Add read/write files
+only when needed. The existing profile API does not mean a `/profile` page exists.
 
 ### Rendering and sidebar
 
@@ -205,8 +220,12 @@ theme controls, and popovers. Payra supplies actual navigation/account contents
 through `modules/layout/Sidebar.tsx`. The top popover represents Payra; the bottom
 shows real email/loading/unavailable state, Account Details, retry, and a red
 BoardUI Sign out button without a branding footer. Account Details opens a
-profile-only BoardUI modal containing just a “Profile” heading for now, with no
-navigation rail or editable fields. One account instance mounts tab
+profile-only BoardUI modal with a centered placeholder avatar overlapping an
+edge-to-edge placeholder cover halfway, a name placeholder/edit pen, and the
+read-only email. A cover edit control sits at the cover's bottom-right, and a
+red Delete account button sits at the modal's bottom-right. Name/image editing
+and deletion stay disabled until supported; there is no navigation rail.
+One account instance mounts tab
 synchronization. Header/mobile drawer are deferred. Support/Settings rows are
 removed; installed workspace/settings examples are not saved product features.
 

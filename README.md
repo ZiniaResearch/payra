@@ -6,8 +6,9 @@ Schedule SMS and forget about forgetting. Built for customers in Bangladesh.
 
 Payra currently implements Google sign-in, browser-key-bound sessions, signed
 refresh/logout, and a protected account-profile API. The React app has a full
-BoardUI sidebar, independent account loading, and an initially empty `/analytics`
-page.
+BoardUI sidebar and independent account loading. Schedule SMS, Messages,
+Analytics, and Buy Credits link to empty page shells; product features remain
+unimplemented.
 
 SMS scheduling, recipients/consent, credits, payments, the application header, and
 production deployment are planned—not implemented. The former identity-demo API
