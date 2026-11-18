@@ -1,5 +1,3 @@
-//! Account profile reads; access-JWT authentication is applied centrally.
-
 mod repository;
 mod routes;
 

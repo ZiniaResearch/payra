@@ -14,6 +14,9 @@ use sqlx::PgPool;
 struct ProfileResponse {
     account_id: String,
     email: String,
+    name: String,
+    avatar_url: String,
+    cover_url: String,
 }
 
 enum ProfileRejection {
@@ -46,13 +49,17 @@ async fn profile(
     Extension(identity): Extension<AccessIdentity>,
 ) -> Result<Json<ProfileResponse>, ProfileRejection> {
     let account_id = identity.account_id();
-    let email = repository::find_account_email(&pool, account_id)
+
+    let account = repository::find_account_profile(&pool, account_id)
         .await
         .map_err(|_| ProfileRejection::Unavailable)?
         .ok_or(ProfileRejection::AccountMissing)?;
 
     Ok(Json(ProfileResponse {
         account_id: account_id.to_string(),
-        email,
+        email: account.email,
+        name: account.name,
+        avatar_url: account.avatar_url,
+        cover_url: account.cover_url,
     }))
 }
