@@ -3,10 +3,7 @@ use crate::state::AppState;
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, State},
-    http::{
-        HeaderMap, HeaderValue, StatusCode,
-        header::{CACHE_CONTROL, ORIGIN},
-    },
+    http::{HeaderValue, StatusCode, header::CACHE_CONTROL},
     response::{IntoResponse, Response},
     routing::post,
 };
@@ -40,18 +37,8 @@ pub(crate) fn routes() -> Router<AppState> {
 
 async fn google_login(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Json(request): Json<GoogleLoginRequest>,
 ) -> Result<Response, StatusCode> {
-    if headers.get(ORIGIN) != Some(&state.ui_origin)
-        || headers
-            .get("x-requested-with")
-            .and_then(|value| value.to_str().ok())
-            != Some("XmlHttpRequest")
-    {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     if request.code.trim().is_empty() {
         return Err(StatusCode::BAD_REQUEST);
     }

@@ -3,10 +3,7 @@ use crate::state::AppState;
 use axum::{
     Json,
     extract::State,
-    http::{
-        HeaderMap, HeaderValue, StatusCode,
-        header::{CACHE_CONTROL, ORIGIN},
-    },
+    http::{HeaderMap, HeaderValue, StatusCode, header::CACHE_CONTROL},
     response::{IntoResponse, Response},
 };
 use chrono::Utc;
@@ -20,7 +17,6 @@ pub(super) struct RefreshRequest {
 }
 
 pub(super) enum RefreshRejection {
-    Forbidden,
     MissingToken,
     InvalidToken,
     ExpiredToken,
@@ -40,7 +36,6 @@ struct ErrorResponse {
 impl IntoResponse for RefreshRejection {
     fn into_response(self) -> Response {
         let (status, error, clear_cookies) = match self {
-            Self::Forbidden => (StatusCode::FORBIDDEN, "refresh_forbidden", false),
             Self::MissingToken => (StatusCode::UNAUTHORIZED, "refresh_missing", false),
             Self::InvalidToken => (StatusCode::UNAUTHORIZED, "refresh_invalid", false),
             Self::ExpiredToken => (StatusCode::UNAUTHORIZED, "refresh_expired", true),
@@ -71,15 +66,6 @@ pub(super) async fn refresh(
     headers: HeaderMap,
     Json(request): Json<RefreshRequest>,
 ) -> Result<Response, RefreshRejection> {
-    if headers.get(ORIGIN) != Some(&state.ui_origin)
-        || headers
-            .get("x-requested-with")
-            .and_then(|value| value.to_str().ok())
-            != Some("XmlHttpRequest")
-    {
-        return Err(RefreshRejection::Forbidden);
-    }
-
     let refresh_token = cookies::read_cookie(&headers, cookies::REFRESH_COOKIE_NAME)
         .map_err(|_| RefreshRejection::InvalidToken)?
         .ok_or(RefreshRejection::MissingToken)?;

@@ -3,10 +3,7 @@ use crate::state::AppState;
 use axum::{
     Json,
     extract::State,
-    http::{
-        HeaderMap, HeaderValue, StatusCode,
-        header::{CACHE_CONTROL, ORIGIN},
-    },
+    http::{HeaderMap, HeaderValue, StatusCode, header::CACHE_CONTROL},
     response::{IntoResponse, Response},
 };
 use jsonwebtoken::errors::ErrorKind;
@@ -19,7 +16,6 @@ pub(super) struct LogoutRequest {
 }
 
 pub(super) enum LogoutRejection {
-    Forbidden,
     InvalidToken,
     InvalidProof,
     FutureCounter,
@@ -34,7 +30,6 @@ struct ErrorResponse {
 impl IntoResponse for LogoutRejection {
     fn into_response(self) -> Response {
         let (status, error) = match self {
-            Self::Forbidden => (StatusCode::FORBIDDEN, "logout_forbidden"),
             Self::InvalidToken => (StatusCode::UNAUTHORIZED, "logout_invalid"),
             Self::InvalidProof => (StatusCode::UNAUTHORIZED, "logout_proof_invalid"),
             Self::FutureCounter => (StatusCode::UNAUTHORIZED, "logout_counter_invalid"),
@@ -54,15 +49,6 @@ pub(super) async fn logout(
     headers: HeaderMap,
     Json(request): Json<LogoutRequest>,
 ) -> Result<Response, LogoutRejection> {
-    if headers.get(ORIGIN) != Some(&state.ui_origin)
-        || headers
-            .get("x-requested-with")
-            .and_then(|value| value.to_str().ok())
-            != Some("XmlHttpRequest")
-    {
-        return Err(LogoutRejection::Forbidden);
-    }
-
     let refresh_token = cookies::read_cookie(&headers, cookies::REFRESH_COOKIE_NAME)
         .map_err(|_| LogoutRejection::InvalidToken)?;
     let Some(refresh_token) = refresh_token else {
