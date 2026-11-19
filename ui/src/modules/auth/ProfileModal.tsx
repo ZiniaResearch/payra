@@ -11,6 +11,7 @@ import { CloseButton } from "@/components/base/buttons/close-button";
 import { IconButton } from "@/components/base/buttons/icon-button";
 import { Modal, ModalBody, ModalFooter } from "@/components/base/modal/modal";
 import { Skeleton } from "@/components/base/skeleton/skeleton";
+import { ProfileName } from "./ProfileName";
 
 type ProfileModalProps = Pick<
 	ComponentProps<typeof Modal>,
@@ -94,24 +95,7 @@ export function ProfileModal({
 								</div>
 							</div>
 							<div className="flex flex-col items-center gap-8 px-6 pb-6">
-								<div className="flex items-center justify-center gap-2">
-									<h2 className="min-w-0 break-words text-center text-headline-medium text-text-primary">
-										<bdi>
-											{name ??
-												(isLoading
-													? "Loading account…"
-													: "Account unavailable")}
-										</bdi>
-									</h2>
-									<IconButton
-										icon={RiEditLine}
-										size="small"
-										aria-label="Edit name (not available yet)"
-										title="Name editing is not available yet"
-										disabled
-										className="border-0 bg-transparent shadow-none disabled:bg-transparent"
-									/>
-								</div>
+								<ProfileName name={name} isLoading={isLoading} />
 								<dl className="w-full rounded-xl bg-background-primary-default p-3">
 									<div className="flex flex-wrap items-center justify-between gap-2">
 										<dt className="flex items-center gap-2 text-body-regular text-text-secondary">
