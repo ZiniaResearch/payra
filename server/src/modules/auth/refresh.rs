@@ -100,7 +100,7 @@ pub(super) async fn refresh(
         &session.browser_public_key,
         refresh_token,
         session.id,
-        &state.refresh_url,
+        &state.api_origin,
         proof::ProofPurpose::Refresh,
     ) {
         return Err(RefreshRejection::InvalidProof);

@@ -1,6 +1,7 @@
 use super::tokens::hash_refresh_token;
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header, jwk::Jwk};
+use reqwest::Url;
 use serde::Deserialize;
 use serde_json::Value;
 use sqlx::types::Uuid;
@@ -31,6 +32,13 @@ impl ProofPurpose {
             Self::Logout => "payra-logout-proof+jwt",
         }
     }
+
+    fn path(&self) -> &'static str {
+        match self {
+            Self::Refresh => "/api/auth/refresh",
+            Self::Logout => "/api/auth/logout",
+        }
+    }
 }
 
 pub(super) fn verify_browser_proof(
@@ -38,7 +46,7 @@ pub(super) fn verify_browser_proof(
     public_key: &Value,
     refresh_token: &str,
     session_id: Uuid,
-    target_url: &str,
+    api_origin: &Url,
     purpose: ProofPurpose,
 ) -> bool {
     if proof.len() > MAX_PROOF_BYTES {
@@ -67,11 +75,14 @@ pub(super) fn verify_browser_proof(
     let Ok(token) = decode::<BrowserProofClaims>(proof, &key, &validation) else {
         return false;
     };
+    let Ok(target_url) = api_origin.join(purpose.path()) else {
+        return false;
+    };
     let claims = token.claims;
     let now = Utc::now().timestamp();
 
     claims.htm == "POST"
-        && claims.htu == target_url
+        && claims.htu == target_url.as_str()
         && claims.sid == session_id.to_string()
         && claims.ath == hash_refresh_token(refresh_token)
         && claims.iat >= now.saturating_sub(MAX_AGE_SECONDS)

@@ -1,4 +1,5 @@
 use axum::{extract::FromRef, http::HeaderValue};
+use reqwest::Url;
 use sqlx::PgPool;
 
 use crate::modules::auth::{GoogleVerifier, TokenSigner};
@@ -9,8 +10,7 @@ pub(crate) struct AppState {
     pub(crate) google: GoogleVerifier,
     pub(crate) ui_origin: HeaderValue,
     pub(crate) token_signer: TokenSigner,
-    pub(crate) refresh_url: String,
-    pub(crate) logout_url: String,
+    pub(crate) api_origin: Url,
 }
 
 impl FromRef<AppState> for PgPool {

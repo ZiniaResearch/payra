@@ -29,18 +29,14 @@ async fn serve() -> Result<(), Box<dyn Error>> {
     )?;
     let token_signer =
         modules::auth::TokenSigner::new(&settings.access_jwt_secret, &settings.refresh_jwt_secret);
-    // Compare signed proof URLs with configuration, not untrusted Host headers.
     let api_origin = reqwest::Url::parse(&settings.api_origin)?;
-    let refresh_url = api_origin.join("/api/auth/refresh")?.to_string();
-    let logout_url = api_origin.join("/api/auth/logout")?.to_string();
 
     let state = state::AppState {
         pool,
         google,
         ui_origin,
         token_signer,
-        refresh_url,
-        logout_url,
+        api_origin,
     };
     let app = router::build(state);
 

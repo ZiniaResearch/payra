@@ -77,7 +77,7 @@ pub(super) async fn logout(
             &session.browser_public_key,
             refresh_token,
             session.id,
-            &state.logout_url,
+            &state.api_origin,
             proof::ProofPurpose::Logout,
         ) {
             return Err(LogoutRejection::InvalidProof);
