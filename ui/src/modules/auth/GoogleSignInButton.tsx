@@ -59,7 +59,7 @@ function GoogleCodeButton() {
 
 			// Page loading may itself need the auth lock, so navigate after
 			// releasing it rather than waiting on a protected loader while locked.
-			await router.navigate({ to: "/analytics", replace: true });
+			await router.navigate({ to: "/messages/new", replace: true });
 		} catch (error) {
 			if (isAxiosError(error) && error.response) {
 				setMessage(
