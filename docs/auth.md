@@ -30,7 +30,8 @@ stable across restarts. All cooperating login/refresh/logout operations use the
    `{ session_id, refresh_token_hash }`.
 5. React saves that metadata with its key ID and cancels/clears prior-account
    Query/Router caches under the lock. It releases the lock before navigating to
-   `/analytics`, where the sidebar independently requests the profile.
+   `/messages/new` (Schedule SMS), where the sidebar independently requests the
+   profile.
 
 The browser never receives raw Payra JWTs in JSON. Each login has its own session;
 the sidebar does not use IndexedDB presence as proof of authentication.
@@ -243,10 +244,10 @@ keep DevTools Network logs, but never publish copied credentials/proofs.
 
 ### Login, profile, and errors
 
-- Sign in; `/analytics` renders immediately and the account skeleton becomes the
-  correct name/email/avatar. Profile returns the correct UUID/email/name/avatar
-  URL/cover URL with `no-store`, no JWT,
-  session ID, or Google subject. A query parameter naming another account must
+- Sign in; `/messages/new` renders immediately with Schedule SMS selected. The
+  account skeleton becomes the correct name/email/avatar. Profile returns the
+  correct UUID/email/name/avatar URL/cover URL with `no-store`, no JWT, session
+  ID, or Google subject. A query parameter naming another account must
   not change the result; a second Google account must return its own profile.
 - Check that a new account receives one of the three bundled covers and that the
   same saved cover survives reloads and later sign-ins. Check missing Google
@@ -315,8 +316,9 @@ LIMIT 5;
 
 - Backend: `server/src/modules/auth/` owns Google exchange, tokens, cookies,
   middleware, proofs, refresh/logout, and account/session SQL.
-  `server/src/main.rs` derives proof URLs; `server/src/router.rs` registers the
-  access-protected `modules/profile/` routes.
+  `server/src/main.rs` parses the configured API origin; `auth/proof.rs` derives
+  expected URLs from that origin and the proof purpose. `server/src/router.rs`
+  registers the access-protected `modules/profile/` routes.
 - Frontend: `modules/auth/` owns login, key storage/proofs, refresh/logout, profile
   query/account menu, shared failure handler, and session-ended notices.
   `shared/api/request.ts` owns bounded access recovery; `router.tsx` registers the

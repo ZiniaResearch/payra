@@ -94,7 +94,7 @@ them on localhost. Production requires public HTTPS origins.
 server/
 ├── migrations/                 accounts and auth_sessions
 └── src/
-    ├── main.rs                 Environment, Tokio, API startup, proof URLs
+    ├── main.rs                 Environment, Tokio, API startup, API origin
     ├── config.rs               Required settings
     ├── db.rs                   Shared SQLx pool
     ├── router.rs               Public/protected groups and CORS
@@ -123,8 +123,10 @@ server/
 ```
 
 `main.rs` supplies pool, Google verifier, token signer, UI origin, and configured
-proof URLs through `AppState`. Access middleware receives only the signer, not
-the database pool. Health/profile extract the pool for their own reads.
+API origin through `AppState`. The auth proof verifier combines that configured
+origin with its purpose-specific refresh/logout path. Access middleware receives
+only the signer, not the database pool. Health/profile extract the pool for their
+own reads.
 
 Keep Rust modules feature-oriented: `routes.rs` handles HTTP, `repository.rs`
 handles SQL, and business functions own full transaction boundaries. Future
@@ -211,10 +213,11 @@ only when needed. The existing profile API does not mean a `/profile` page exist
 ### Rendering and sidebar
 
 `_protected/route.tsx` arranges `Sidebar` and `<Outlet />` with `ssr: false`.
-The sidebar and empty analytics page appear immediately. The account query and
-future page sections load independently: each has its own skeleton/result/retry
-UI, without a page-wide awaited loader or `Promise.all` gate. Signed-out visitors
-can briefly see the empty shell; backend JWT verification is the security boundary,
+After sign-in, the sidebar and empty Schedule SMS page appear immediately. The
+account query and future page sections load independently: each has its own
+skeleton/result/retry UI, without a page-wide awaited loader or `Promise.all`
+gate. Signed-out visitors can briefly see the empty shell; backend JWT
+verification is the security boundary,
 not layout grouping or local storage.
 
 The full BoardUI sidebar keeps animated collapse, `Cmd/Ctrl+K` navigation search,

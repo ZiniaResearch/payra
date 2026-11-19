@@ -34,7 +34,7 @@ A birthday greeting and an appointment reminder use the same scheduler. Yearly r
 
 ## Account sessions
 
-Customers click **Continue with Google** and choose an account in Google's popup. Payra exchanges/verifies the authorization code server-side, creates/reuses the account, binds a new session to the browser public key, and opens `/analytics` after saving the local session/key metadata. The sidebar then fetches the account's real email independently.
+Customers click **Continue with Google** and choose an account in Google's popup. Payra exchanges/verifies the authorization code server-side, creates/reuses the account, binds a new session to the browser public key, and opens **Schedule SMS** (`/messages/new`) after saving the local session/key metadata. The sidebar then fetches the account's real email independently.
 
 Access lasts 10 minutes; refresh has a 30-day inactivity deadline capped by a 90-day absolute deadline. Tabs on the same React origin serialize login/refresh/logout through Web Locks and share cookies/IndexedDB. Each browser/device signs in separately. Logout ends refresh for one login and synchronizes mounted account views via session-ended notices. Already-issued copied access JWTs may remain usable until expiry. Strict refresh reuse detection can require a new login after a lost committed response; there is no replay grace. See [authentication](auth.md) for contracts and recovery.
 
