@@ -10,20 +10,55 @@ function base64Url(bytes: Uint8Array): string {
 		.replace(/=+$/u, "");
 }
 
-export async function createBrowserProof(
+export function createBrowserProof(
 	session: BrowserSession,
 	privateKey: CryptoKey,
 	targetUrl: string,
 	purpose: "refresh" | "logout",
 ): Promise<string> {
+	return signBrowserProof(
+		session.session_id,
+		privateKey,
+		targetUrl,
+		purpose,
+		session.refresh_token_hash,
+	);
+}
+
+export async function createProfileDeletionProof(
+	sessionId: string,
+	privateKey: CryptoKey,
+	targetUrl: string,
+	nonce: string,
+): Promise<string> {
+	const nonceHash = await window.crypto.subtle.digest(
+		"SHA-256",
+		new TextEncoder().encode(nonce),
+	);
+	return signBrowserProof(
+		sessionId,
+		privateKey,
+		targetUrl,
+		"delete-profile",
+		base64Url(new Uint8Array(nonceHash)),
+	);
+}
+
+async function signBrowserProof(
+	sessionId: string,
+	privateKey: CryptoKey,
+	targetUrl: string,
+	purpose: "refresh" | "logout" | "delete-profile",
+	tokenHash: string,
+): Promise<string> {
 	const encoder = new TextEncoder();
 	const header = { alg: "ES256", typ: `payra-${purpose}-proof+jwt` };
 	const claims = {
-		htm: "POST",
+		htm: purpose === "delete-profile" ? "DELETE" : "POST",
 		htu: targetUrl,
 		iat: Math.floor(Date.now() / 1000),
-		sid: session.session_id,
-		ath: session.refresh_token_hash,
+		sid: sessionId,
+		ath: tokenHash,
 	};
 	const signingInput = [
 		base64Url(encoder.encode(JSON.stringify(header))),

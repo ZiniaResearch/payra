@@ -1,13 +1,13 @@
-import { RiAddLine, RiDeleteBinLine, RiMailLine } from "@remixicon/react";
+import { RiAddLine, RiMailLine } from "@remixicon/react";
 import { type ComponentProps, useState } from "react";
 import { Avatar } from "@/components/base/avatar/avatar";
-import { Button } from "@/components/base/buttons/button";
 import { CloseButton } from "@/components/base/buttons/close-button";
 import { IconButton } from "@/components/base/buttons/icon-button";
 import { Modal, ModalBody, ModalFooter } from "@/components/base/modal/modal";
 import { Skeleton } from "@/components/base/skeleton/skeleton";
 import { AvatarEditor } from "./AvatarEditor";
 import { CoverPicker } from "./CoverPicker";
+import { DeleteAccount } from "./DeleteAccount";
 import { ProfileName } from "./ProfileName";
 import type { CurrentAccount } from "./queries";
 
@@ -107,15 +107,7 @@ export function ProfileModal({
 						</section>
 					</ModalBody>
 					<ModalFooter className="mt-0 flex-row justify-end px-6 pb-6">
-						<Button
-							variant="danger"
-							size="small"
-							leadingIcon={RiDeleteBinLine}
-							title="Account deletion is not available yet"
-							disabled
-						>
-							Delete account
-						</Button>
+						<DeleteAccount accountId={account?.account_id} />
 					</ModalFooter>
 					{avatarEditorOpen && (
 						<AvatarEditor onClose={() => setAvatarEditorOpen(false)} />

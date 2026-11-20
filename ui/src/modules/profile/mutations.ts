@@ -1,6 +1,19 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "@tanstack/react-router";
 
-import { authenticatedRequest } from "@/shared/api/request";
+import {
+	clearBrowserSession,
+	loadBrowserKey,
+	loadBrowserSession,
+} from "@/modules/auth/browser-key-store";
+import { createProfileDeletionProof } from "@/modules/auth/browser-proof";
+import { AUTH_LOCK } from "@/modules/auth/refresh";
+import { notifySessionEnded } from "@/modules/auth/session-events";
+import { api } from "@/shared/api/client";
+import {
+	authenticatedRequest,
+	authenticatedRequestUnderLock,
+} from "@/shared/api/request";
 import { type CurrentAccount, currentAccountQueryOptions } from "./queries";
 
 const writeHeaders = { "X-Requested-With": "XmlHttpRequest" };
@@ -70,5 +83,77 @@ function useProfileChange<T>(
 					: cached,
 			);
 		},
+	});
+}
+
+export class ProfileDeletionError extends Error {}
+
+export function useDeleteProfile() {
+	const queryClient = useQueryClient();
+	const router = useRouter();
+
+	return useMutation({
+		networkMode: "always",
+		gcTime: 0,
+		mutationFn: (accountId: string) =>
+			navigator.locks.request(AUTH_LOCK, async () => {
+				const session = await loadBrowserSession();
+				const key = session && (await loadBrowserKey(session.keyId));
+
+				if (!session || !key) {
+					throw new ProfileDeletionError(
+						"Your browser key is unavailable. Sign in again before deleting your account.",
+					);
+				}
+
+				const challenge = await authenticatedRequestUnderLock<{
+					account_id: string;
+					nonce: string;
+				}>({
+					method: "POST",
+					url: "/api/profile/deletion",
+					headers: writeHeaders,
+				});
+
+				if (challenge.account_id !== accountId) {
+					throw new ProfileDeletionError(
+						"The signed-in account changed. Reload your profile and try again.",
+					);
+				}
+
+				const path = "/api/profile";
+				const targetUrl = new URL(
+					api.getUri({ url: path }),
+					window.location.origin,
+				).href;
+				const proof = await createProfileDeletionProof(
+					session.session_id,
+					key.privateKey,
+					targetUrl,
+					challenge.nonce,
+				);
+				const { session_id } = await authenticatedRequestUnderLock<{
+					session_id: string;
+				}>({
+					method: "DELETE",
+					url: path,
+					headers: writeHeaders,
+					data: { nonce: challenge.nonce, proof },
+				});
+
+				try {
+					await clearBrowserSession(session_id);
+				} catch {
+					// The server already ended all sessions and cleared both cookies.
+					console.error("Could not clear the deleted account's browser key.");
+				}
+
+				notifySessionEnded(session_id);
+				await queryClient.cancelQueries();
+				queryClient.clear();
+				router.clearCache();
+				await router.navigate({ to: "/login", replace: true });
+				router.clearCache();
+			}),
 	});
 }
