@@ -20,6 +20,15 @@ export class AuthenticationRequiredError extends Error {
 	}
 }
 
+export class SessionRecoveredError extends Error {
+	constructor() {
+		super(
+			"Your session was recovered. Check the current account before trying again.",
+		);
+		this.name = "SessionRecoveredError";
+	}
+}
+
 export async function refreshSession(): Promise<BrowserSession> {
 	const session = await loadBrowserSession();
 	if (!session) {
