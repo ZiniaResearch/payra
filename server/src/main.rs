@@ -5,7 +5,8 @@ mod request_origin;
 mod router;
 mod state;
 
-use std::error::Error;
+use modules::profile::AvatarStorage;
+use std::{error::Error, sync::Arc};
 use tokio::net::TcpListener;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -30,7 +31,13 @@ async fn serve() -> Result<(), Box<dyn Error>> {
     let token_signer =
         modules::auth::TokenSigner::new(&settings.access_jwt_secret, &settings.refresh_jwt_secret);
     let api_origin = reqwest::Url::parse(&settings.api_origin)?;
+    let avatar_storage = settings
+        .avatar_storage
+        .map(AvatarStorage::new)
+        .transpose()?
+        .map(Arc::new);
 
+    let listener = TcpListener::bind(settings.bind_addr.as_str()).await?;
     let state = state::AppState {
         pool,
         google,
@@ -38,10 +45,10 @@ async fn serve() -> Result<(), Box<dyn Error>> {
         token_signer,
         api_origin,
         media_base_url: settings.media_base_url,
+        avatar_storage,
     };
     let app = router::build(state);
 
-    let listener = TcpListener::bind(settings.bind_addr.as_str()).await?;
     axum::serve(listener, app).await?;
     Ok(())
 }

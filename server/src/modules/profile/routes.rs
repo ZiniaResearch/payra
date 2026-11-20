@@ -1,4 +1,5 @@
 use super::{
+    avatar,
     presets::COVER_PRESETS,
     repository::{self, AccountProfile},
 };
@@ -8,7 +9,7 @@ use axum::{
     extract::{DefaultBodyLimit, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, put},
 };
 use serde::{Deserialize, Serialize};
 use sqlx::types::Uuid;
@@ -23,13 +24,14 @@ struct UpdateProfileRequest {
 }
 
 #[derive(Serialize)]
-struct ProfileResponse {
+pub(super) struct ProfileResponse {
     account_id: String,
     email: String,
     name: String,
     avatar_url: String,
     cover_url: String,
     cover_id: Option<&'static str>,
+    avatar_uploads_enabled: bool,
 }
 
 #[derive(Serialize)]
@@ -39,10 +41,15 @@ struct CoverResponse {
     url: String,
 }
 
-enum ProfileRejection {
+pub(super) enum ProfileRejection {
     InvalidName,
     InvalidCover,
     EmptyUpdate,
+    InvalidAvatar,
+    AvatarTooLarge,
+    AvatarReadTimeout,
+    AvatarUploadsDisabled,
+    AvatarBusy,
     AccountMissing,
     Unavailable,
 }
@@ -58,6 +65,13 @@ impl IntoResponse for ProfileRejection {
             Self::InvalidName => (StatusCode::UNPROCESSABLE_ENTITY, "invalid_profile_name"),
             Self::InvalidCover => (StatusCode::UNPROCESSABLE_ENTITY, "invalid_cover_id"),
             Self::EmptyUpdate => (StatusCode::UNPROCESSABLE_ENTITY, "empty_profile_update"),
+            Self::InvalidAvatar => (StatusCode::UNPROCESSABLE_ENTITY, "invalid_avatar"),
+            Self::AvatarTooLarge => (StatusCode::PAYLOAD_TOO_LARGE, "avatar_too_large"),
+            Self::AvatarReadTimeout => (StatusCode::REQUEST_TIMEOUT, "avatar_read_timeout"),
+            Self::AvatarUploadsDisabled => {
+                (StatusCode::SERVICE_UNAVAILABLE, "avatar_uploads_disabled")
+            }
+            Self::AvatarBusy => (StatusCode::TOO_MANY_REQUESTS, "avatar_upload_busy"),
             Self::AccountMissing => (StatusCode::UNAUTHORIZED, "account_missing"),
             Self::Unavailable => (StatusCode::SERVICE_UNAVAILABLE, "profile_unavailable"),
         };
@@ -75,6 +89,10 @@ pub(crate) fn routes() -> Router<AppState> {
                 .layer(DefaultBodyLimit::max(4096)),
         )
         .route("/api/profile/covers", get(covers))
+        .route(
+            "/api/profile/avatar",
+            put(avatar::upload).layer(DefaultBodyLimit::max(avatar::MAX_UPLOAD_BYTES)),
+        )
 }
 
 async fn covers(State(state): State<AppState>) -> Json<[CoverResponse; COVER_PRESETS.len()]> {
@@ -144,7 +162,7 @@ fn parse_name(input: &str) -> Result<&str, ProfileRejection> {
     Ok(name)
 }
 
-fn profile_response(
+pub(super) fn profile_response(
     state: &AppState,
     account_id: Uuid,
     account: AccountProfile,
@@ -162,5 +180,6 @@ fn profile_response(
         avatar_url: account.avatar_url,
         cover_url: account.cover_url,
         cover_id,
+        avatar_uploads_enabled: state.avatar_storage.is_some(),
     })
 }

@@ -13,7 +13,13 @@ use tower_http::cors::CorsLayer;
 pub(crate) fn build(state: AppState) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(state.ui_origin.clone())
-        .allow_methods([Method::GET, Method::POST, Method::HEAD, Method::PATCH])
+        .allow_methods([
+            Method::GET,
+            Method::HEAD,
+            Method::POST,
+            Method::PATCH,
+            Method::PUT,
+        ])
         .allow_headers([CONTENT_TYPE, HeaderName::from_static("x-requested-with")])
         .allow_credentials(true);
 
