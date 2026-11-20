@@ -14,7 +14,12 @@ import {
 	Dialog as AriaDialog,
 	DialogTrigger as AriaDialogTrigger,
 	Popover as AriaPopover,
+	Pressable,
 } from "react-aria-components";
+import {
+	IconButton,
+	type IconButtonProps,
+} from "@/components/base/buttons/icon-button";
 import {
 	MENU_ITEM,
 	MENU_ITEM_ACTIVE,
@@ -136,6 +141,20 @@ export function DropdownTrigger({
 				className as string,
 			)}
 		/>
+	);
+}
+
+/** An icon button that anchors the dropdown without restyling its trigger. */
+export function DropdownIconTrigger({
+	disabled,
+	...props
+}: Omit<IconButtonProps, "ref">) {
+	const context = useContext(DropdownContext);
+
+	return (
+		<Pressable isDisabled={disabled}>
+			<IconButton {...props} ref={context?.triggerRef} disabled={disabled} />
+		</Pressable>
 	);
 }
 
