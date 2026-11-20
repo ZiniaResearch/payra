@@ -38,9 +38,9 @@ the sidebar does not use IndexedDB presence as proof of authentication.
 
 ## Profile
 
-Google-initialized profiles are implemented. Editing, self-hosted Rust media
-uploads, account deletion, and outstanding live checks are tracked in the ordered
-[profile TODO](architecture.md#profile-implementation-todo).
+Google initializes the profile; users can edit their name, choose a preset cover,
+upload a profile photo when storage is configured, or delete the account.
+See the [profile roadmap](architecture.md#profile-implementation-todo).
 
 `GET /api/profile` uses shared access-JWT middleware, then selects the profile from
 `accounts` using only the verified account ID. It returns `Cache-Control: no-store`:
@@ -50,21 +50,24 @@ uploads, account deletion, and outstanding live checks are tracked in the ordere
   "account_id": "account UUID",
   "email": "person@example.com",
   "name": "Person",
-  "avatar_url": "https://example.com/profile/default-profile.webp",
-  "cover_url": "https://example.com/profile/cover-2.webp"
+  "avatar_url": "https://media.example.com/default-profile.webp",
+  "cover_url": "https://media.example.com/cover-2.webp",
+  "cover_id": "cover-2",
+  "avatar_uploads_enabled": true
 }
 ```
 
 At account creation, verified optional Google name/photo claims initialize the
-required `name`/`avatar_url` fields; missing values use `Account` and the bundled
-default avatar, and photo URLs must be HTTPS without embedded credentials.
-`cover_url` is randomly selected from three bundled covers. Bundled URLs use the
-configured UI origin. Later sign-ins update email only, preserving saved profile
-values. There are no separate Google-default/override fields.
+required `name`/`avatar_url` fields; missing values use `Account` and the shared
+default avatar, and Google photo URLs must be HTTPS without embedded credentials.
+`cover_url` is randomly selected from three presets. Presets and the fallback
+avatar use the public Garage read URL configured by `MEDIA_BASE_URL`. Later
+sign-ins update email only, preserving saved profile values, including older
+image URLs. There are no separate Google-default/override fields.
 
 No query/body parameter selects an account. No session-table read, cookie change,
 session ID, or Google subject is part of this response.
-The `/profile` frontend page and profile editing are still planned.
+The Profile modal is the UI; there is no separate `/profile` page.
 
 | Failure | Result |
 | --- | --- |
@@ -74,28 +77,91 @@ The `/profile` frontend page and profile editing are still planned.
 | Database failure | `503 profile_unavailable`; ordinary retryable error. |
 
 Errors use `{ "error": "code" }` and are also non-cacheable through middleware.
-`modules/auth/queries.ts` calls `authenticatedRequest()` directly, forwarding the
-Query abort signal. It uses `["account", "current"]`, a 60-second stale time, the
-global retry defaults, and no polling.
+`ui/src/modules/profile/queries.ts` calls `authenticatedRequest()` directly,
+forwarding the Query abort signal. It uses `["account", "current"]`, a 60-second
+stale time, the global retry defaults, and no polling. Successful name, cover,
+and avatar saves cancel an in-flight profile read and update only the changed
+fields in the shared cache, without forcing another profile GET.
 
 `AccountMenu.tsx` owns the query and one logout hook. It shows a skeleton, the real
 name/email/avatar, or an unavailable state with retry inside its popover.
 Account Details above the red Sign out button opens a profile-only modal. Its
 edge-to-edge cover, overlapping avatar, and name use the same profile query.
 Failed avatar loads show initials, and missing/failed cover images retain the
-semantic background. Name/profile-image/cover edit controls and Delete account
-remain disabled. No profile write, upload, or account-deletion request is sent.
-Email is read-only, with a loading skeleton/unavailable fallback. The branding
-footer is hidden. Theme/logout remain usable while data loads or fails. The
-shell/page never waits for this query; more consumers should reuse its options/cache.
+semantic background. Email is read-only, with a loading skeleton and an
+unavailable fallback. The branding footer is hidden. Theme/logout remain usable
+while data loads or fails. The shell never waits for this query; other consumers
+should reuse its options and cache.
+
+### Edit name and cover
+
+`GET /api/profile/covers` lists `{ id, label, url }` presets without querying the
+database. `PATCH /api/profile` accepts `name`, `cover_id`, or both. Names are
+trimmed and must contain 1–80 Unicode code points without control characters.
+The server resolves preset IDs to URLs and rejects arbitrary URLs, empty updates,
+and other fields. It returns the saved profile after one account-scoped update.
+An older bundled cover still maps to its recognized preset; database URLs are
+not backfilled. `cover_id` is `null` if the saved URL is not recognized.
+The cover pencil opens a popover beside or below the trigger, with live preview.
+Cancel, Escape, and outside dismissal discard the draft; only Save persists it.
+
+### Upload an avatar
+
+`PUT /api/profile/avatar` accepts raw JPEG, PNG, or WebP bytes (maximum 5 MiB and
+4096 × 4096 pixels). Payra checks the decoded content and stores a static WebP,
+at most 512 × 512 pixels, without the original metadata. Only two uploads run
+at once per API process. The handler uses the verified access JWT without a
+session-table lookup. It returns the updated profile; an invalid or failed
+upload does not replace the old photo.
+
+The private S3 API uses a key scoped to the avatar bucket. Read URLs are public
+to anyone with the link; uploads use unique keys and are written with `no-store`.
+Payra generates the object key in Rust and uploads the new file before saving
+its URL and key in a database transaction. Only after commit does it try
+deleting the previous owned photo in the background, with one retry. Google
+photos and shared presets are never deleted. There is no cleanup queue or
+polling: a failed database write or failed removal can leave an unused object
+in Garage.
+
+### Delete account
+
+The profile footer asks for one explicit confirmation, without a popup or
+Google sign-in. The confirmed request requires an active Payra session and proof
+from its registered browser key. This verifies possession of the key, not fresh
+user authentication; a person with access to the unlocked, signed-in browser
+can still confirm deletion.
+
+1. After confirmation, `POST /api/profile/deletion` issues a 60-second nonce
+   for the current active session, replacing any previous nonce for that session.
+   The UI checks the returned account ID against the profile being deleted.
+2. `DELETE /api/profile` accepts `{ "nonce": "…", "proof": "…" }`. The server
+   locks the account, active session, and matching challenge. It verifies an
+   ES256 proof signed by that session’s browser key, using the
+   `payra-delete-profile-proof+jwt` type, `DELETE` method, exact API URL, session
+   ID, timestamp, and base64url SHA-256 hash of the nonce. Refresh/logout proofs
+   are not accepted. Neither request creates a login.
+3. The transaction deletes the account. PostgreSQL cascades to every session
+   and its challenge. After commit Payra tries to delete the current owned
+   avatar in the background, with one retry. The API clears both cookies and
+   returns the ended session ID. The UI reuses the existing local key/cache
+   cleanup and session-ended notification.
+
+Deletion removes the Payra profile and sessions from the live DB immediately.
+An uploaded photo may remain reachable by its URL if removal fails or the API
+restarts before it finishes. There is no persistent retry after restart.
+Backups and copies made by others are not erased by the request. No defined
+production backup retention window, billing records, or message records exist
+yet. Before production, set and disclose backup expiry and ensure a restore
+does not republish deleted data. This does not delete the Google Account;
+signing in again creates a new Payra account.
 
 ## Protected requests and shared errors
 
 Access middleware locally verifies JWT signature, algorithm, issuer, audience,
-type, expiry, and account/session UUIDs without reading sessions. `AccessIdentity`
-currently exposes only the account ID. Future sensitive writes must deliberately
-expose the validated session ID and check/lock active session state in their
-business transaction.
+type, expiry, and account/session UUIDs without reading sessions. The verified
+session ID is checked explicitly for account deletion. Profile reads,
+name/cover edits, and avatar uploads do not read the session table. All profile
+writes use the shared exact-Origin and `X-Requested-With` requirement.
 
 `authenticatedRequest()` has three steps:
 
@@ -108,7 +174,8 @@ business transaction.
    no recursive refresh loop.
 
 Successful ordinary requests do not read IndexedDB. Refresh/logout use the bare
-Axios client, not the protected wrapper. Requests have a 15-second timeout.
+Axios client, not the protected wrapper. The default request timeout is 15
+seconds; avatar upload uses 30 seconds.
 An already-started rotation is not canceled by page navigation. A transient
 feature Query retry starts again at the original request, not a captured proof.
 
@@ -249,10 +316,10 @@ keep DevTools Network logs, but never publish copied credentials/proofs.
   correct UUID/email/name/avatar URL/cover URL with `no-store`, no JWT, session
   ID, or Google subject. A query parameter naming another account must
   not change the result; a second Google account must return its own profile.
-- Check that a new account receives one of the three bundled covers and that the
-  same saved cover survives reloads and later sign-ins. Check missing Google
-  claims, bundled asset URLs, failed-avatar initials, cover-background fallback,
-  and consistent sidebar/modal data. Editing/deletion controls stay disabled.
+- Check that a new account receives one of the three media-hosted covers and
+  that the same saved cover survives reloads and later sign-ins. Check missing Google
+  claims, preset asset URLs, failed-avatar initials, cover-background fallback,
+  and consistent sidebar/modal data.
 - Remove access and refresh cookies, then reload: shared cleanup/login navigation,
   without a loop or old cached identity. The empty shell may appear briefly.
 - With a disposable account and valid access cookie, delete its account row:
@@ -262,6 +329,25 @@ keep DevTools Network logs, but never publish copied credentials/proofs.
   again** in the account popover. Theme/logout must not wait for profile data.
 - When more queries/mutations exist, verify concurrent terminal failures share
   cleanup per QueryClient and mutations are not automatically replayed.
+
+### Profile edits, uploads, and deletion
+
+- Change a name and a preset cover independently. A cover draft should preview
+  immediately. Clicking outside or choosing Cancel should restore the saved
+  cover. Save a different preset, then reload and sign in again to verify
+  persistence. A successful save must not force another profile GET, and
+  invalid preset IDs must leave the saved cover unchanged.
+- With a dedicated avatar bucket configured, upload a JPEG/PNG/WebP and verify
+  both modal and sidebar update. Try a non-image, oversized image, and an
+  unavailable Garage server; none should replace the saved photo. Replace the
+  photo with Garage healthy, check the old URL stops serving, and verify preset
+  URLs still work. A failed old-file delete must not fail the saved profile change.
+- Use a disposable account. Cancel inline confirmation; nothing should be sent.
+  A missing browser key, invalid proof, replaced/expired challenge, or revoked
+  Payra session must not delete the account. Confirm normally: no Google prompt,
+  all session rows disappear, the other tab signs out, and signing in again
+  creates a new account ID. With Garage healthy, the uploaded URL should stop
+  serving. If removal fails, the account should still be deleted.
 
 ### Refresh
 
@@ -319,8 +405,9 @@ LIMIT 5;
   `server/src/main.rs` parses the configured API origin; `auth/proof.rs` derives
   expected URLs from that origin and the proof purpose. `server/src/router.rs`
   registers the access-protected `modules/profile/` routes.
-- Frontend: `modules/auth/` owns login, key storage/proofs, refresh/logout, profile
-  query/account menu, shared failure handler, and session-ended notices.
+- Frontend: `modules/auth/` owns login, key storage/proofs, refresh/logout,
+  the sidebar account menu, shared failure handler, and session-ended notices.
+  `modules/profile/` owns the profile query and UI, uploads, and deletion flow.
   `shared/api/request.ts` owns bounded access recovery; `router.tsx` registers the
   handler; `integrations/tanstack-query/root-provider.tsx` owns retry defaults.
 

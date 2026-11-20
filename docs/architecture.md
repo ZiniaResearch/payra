@@ -14,8 +14,10 @@ Implemented:
 - Local access-JWT middleware without session-table reads, protected
   `GET /api/profile`, shared terminal Query/Mutation auth-error handling, and
   session-ended tab synchronization.
-- Google-initialized name/avatar, a randomly selected bundled cover, and shared
+- Google-initialized name/avatar, a randomly selected media-hosted cover, and shared
   profile reads for the sidebar and modal. Later sign-ins preserve saved values.
+- BoardUI name and preset-cover editing, optional Garage-backed avatar uploads,
+  and account deletion with a browser-key proof and best-effort avatar removal.
 - Full source-owned BoardUI sidebar, independent account skeleton/email/retry UI,
   theme controls, and one mounted signed-logout hook.
 - Client-rendered pathless `_protected` layout with empty Schedule SMS, Messages,
@@ -29,10 +31,11 @@ Deferred:
 | --- | --- |
 | Header/mobile navigation | `Header.tsx` is an unused stub; no integration or mobile drawer. |
 | Workspace/settings/support | Sidebar UI is installed; product actions are not connected or persisted. |
-| Profile | Saved name/avatar/cover and email/ID read; no editing, uploads, deletion, or `/profile` page. |
+| Profile | No standalone `/profile` page, avatar cropping tools, or custom cover uploads. |
+| Sign-in routing | Redirecting signed-in browsers away from `/login` and requiring sign-out before a new login are planned, not enforced yet. |
 | Product pages | `/` is a public placeholder. Scheduling/messages/billing/analytics routes have empty shells only. Pricing, consent, recipients, and product data/UI remain planned. |
 | Scheduling/payments | No worker, scheduling/credit/payment APIs, provider integrations, or product migrations; billing currently has only a frontend page shell. |
-| Deployment/hardening | No application Dockerfiles/Caddy stack, worker/migration subcommands, scheduled cleanup, auth rate limits, or automated auth regression coverage. |
+| Deployment/hardening | No application Dockerfiles/Caddy stack, separate worker/migration subcommands, auth rate limits, or automated auth regression coverage. |
 
 No request-session tracker, per-login generation, additional cancellation
 controller, or session-started notification is part of this design.
@@ -52,13 +55,41 @@ docker compose up -d db
 
 | File | Local settings |
 | --- | --- |
-| `server/.env` | Example `DATABASE_URL`, `BIND_ADDR=127.0.0.1:8000`, `UI_ORIGIN=http://localhost:3000`, `API_ORIGIN=http://localhost:8000`, Google client ID/secret, and distinct access/refresh JWT secrets. |
+| `server/.env` | Example `DATABASE_URL`, `BIND_ADDR=127.0.0.1:8000`, `UI_ORIGIN=http://localhost:3000`, `API_ORIGIN=http://localhost:8000`, required `MEDIA_BASE_URL`, Google client ID/secret, and distinct access/refresh JWT secrets. |
 | `ui/.env` | The same public client ID as `VITE_GOOGLE_CLIENT_ID`; `VITE_API_URL=http://localhost:8000`. |
 
 Generate each JWT secret independently, for example with `openssl rand -base64 32`,
 and retain both across restarts. Never put server secrets in `VITE_` variables.
 Configure the Google Web client's authorized frontend origin with the matching
 client ID. [Google client setup](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid)
+
+`MEDIA_BASE_URL` is the browser-facing read URL for shared profile images, not
+Garage's authenticated S3 endpoint. The local example uses
+`http://payra-presets.web.garage.localhost:3902`; use the public HTTPS media URL
+on the VPS. Seed the bucket root with `default-profile.webp` and `cover-1.webp`
+through `cover-3.webp` from `ui/public/profile/`. Payra does not need Garage
+credentials to display these assets.
+
+The local Garage Compose service expects `payra-media/.env` and
+`payra-media/garage.toml` to be supplied locally. Both files are ignored by Git.
+
+To enable **avatar uploads** locally, use the running `payra-media` Compose
+project. From the repository root:
+
+```bash
+docker compose -f payra-media/compose.yaml exec garage /garage bucket create payra-avatars
+docker compose -f payra-media/compose.yaml exec garage /garage key create payra-avatar-app
+docker compose -f payra-media/compose.yaml exec garage /garage bucket allow payra-avatars --read --write --key payra-avatar-app
+docker compose -f payra-media/compose.yaml exec garage /garage bucket website --allow payra-avatars
+```
+
+The key creation command prints a secret; put it only in `server/.env`. Set the
+five avatar settings shown in `server/.env.example`, using that bucket's key, not
+the preset or administrative key. The signing region defaults to `garage`;
+override `AVATAR_S3_REGION` if it differs in your Garage config. With no
+`AVATAR_S3_ENDPOINT`, uploads and automatic avatar removal are disabled. The
+local bucket website exposes photos to anyone with their URL. Use a disposable
+account when testing [account deletion](auth.md#delete-account).
 
 From `server/`, apply migrations and start Axum; both load its `.env`:
 
@@ -80,9 +111,10 @@ bun --bun run dev
 
 Open `http://localhost:3000/login`. Use `localhost` consistently for browser-facing
 URLs, even though services bind to loopback. Requests are credentialed/cross-origin;
-Vite has no `/api` proxy. CORS currently allows the configured UI origin, GET/POST,
-content type, and `X-Requested-With`. Auth POSTs check the exact Origin and require
-`X-Requested-With: XmlHttpRequest`.
+Vite has no `/api` proxy. CORS allows the configured UI origin, GET/HEAD/POST/
+PATCH/PUT/DELETE, content type, and `X-Requested-With`. Shared Origin middleware
+requires the exact UI origin and `X-Requested-With: XmlHttpRequest` on writes.
+GET/HEAD may omit Origin but reject a mismatching supplied value; CORS handles preflight.
 
 Browser signing needs Web Crypto, IndexedDB, and Web Locks in a secure context.
 Cookies remain `Secure` locally; use HTTPS/matching origins if the browser rejects
@@ -92,10 +124,10 @@ them on localhost. Production requires public HTTPS origins.
 
 ```text
 server/
-├── migrations/                 accounts and auth_sessions
+├── migrations/                 Accounts, sessions, avatar keys, deletion challenges
 └── src/
     ├── main.rs                 Environment, Tokio, API startup, API origin
-    ├── config.rs               Required settings
+    ├── config.rs               Required settings and optional avatar storage
     ├── db.rs                   Shared SQLx pool
     ├── router.rs               Public/protected groups and CORS
     ├── state.rs                Shared state and pool extraction
@@ -118,15 +150,20 @@ server/
         │   └── routes.rs       Database health
         └── profile/
             ├── mod.rs
-            ├── routes.rs       Profile response/error mapping
-            └── repository.rs   Account-scoped profile read
+            ├── routes.rs       Profile reads, updates, and route registration
+            ├── repository.rs   Account-scoped SQL and transaction locks
+            ├── presets.rs      Shared cover catalog and fallback avatar
+            ├── avatar.rs       Validate, re-encode, and publish an upload
+            ├── avatar_storage.rs  Scoped Garage client and best-effort deletes
+            └── deletion.rs     Browser proof and account deletion
 ```
 
-`main.rs` supplies pool, Google verifier, token signer, UI origin, and configured
-API origin through `AppState`. The auth proof verifier combines that configured
-origin with its purpose-specific refresh/logout path. Access middleware receives
-only the signer, not the database pool. Health/profile extract the pool for their
-own reads.
+`main.rs` supplies the pool, Google verifier, token signer, origins, media base
+URL, and optional avatar storage through `AppState`. The auth proof verifier combines the API
+origin with its purpose-specific refresh, logout, or deletion path. Access
+middleware receives only the signer, not the database pool. Profile reads,
+name/cover edits, and avatar uploads do not check the session table. Preparing
+and authorizing account deletion do.
 
 Keep Rust modules feature-oriented: `routes.rs` handles HTTP, `repository.rs`
 handles SQL, and business functions own full transaction boundaries. Future
@@ -160,12 +197,15 @@ ui/src/
 │   │   ├── GoogleSignInButton.tsx
 │   │   ├── AccountMenu.tsx          Profile state and signed logout
 │   │   ├── api.ts                   Existing Google login request
-│   │   ├── queries.ts               Profile read/options/cache key
 │   │   ├── refresh.ts
 │   │   ├── logout.ts
 │   │   ├── use-logout.ts            Action and private tab-sync hook
 │   │   ├── handle-auth-failure.ts
 │   │   └── ...                     Browser keys, storage, proofs, events
+│   ├── profile/
+│   │   ├── ProfileModal.tsx         Profile and separate editors/dialogs
+│   │   ├── queries.ts               Profile and preset reads/cache keys
+│   │   └── mutations.ts             Profile writes and deletion cleanup
 │   ├── analytics/
 │   │   └── AnalyticsPage.tsx        Initially empty
 │   ├── messages/
@@ -255,21 +295,26 @@ runs the same build as `build`, not a separate route-only generator.
 | `POST /api/auth/google` | Google code/public key → cookies and session/hash metadata. |
 | `POST /api/auth/refresh` | Signed proof → rotated cookies and session/hash metadata. |
 | `POST /api/auth/logout` | Signed proof → end one login, clear cookies, 204. |
-| `GET /api/profile` | Verified account → `{ account_id, email, name, avatar_url, cover_url }`, `no-store`. |
+| `GET /api/profile` | Verified account → saved profile, selected preset ID and avatar availability, `no-store`. |
+| `GET /api/profile/covers` | Server-owned `{ id, label, url }[]` catalog; no DB lookup. |
+| `PATCH /api/profile` | Optional `name` and/or `cover_id` → updated profile. |
+| `PUT /api/profile/avatar` | Image bytes → save a WebP in Garage and return the updated profile. |
+| `POST /api/profile/deletion` | Active login → issue a 60-second nonce for that session. |
+| `DELETE /api/profile` | Signed browser proof → delete the account and sessions, clear cookies, and attempt avatar removal after commit. |
 
 Auth routes/health are outside access middleware; profile is inside it. The old
 identity-demo endpoint is removed. Detailed failures and security boundaries are
 in [authentication](auth.md).
 
-Only `accounts` (UUIDv7 ID, unique Google subject, email, required name/avatar URL/
-cover URL, creation time) and
-`auth_sessions` (account FK/cascade, public key, positive counter, deadlines,
-constraints/index) exist. First login saves the verified Google name/photo or
-`Account`/the bundled default avatar and randomly selects one of three bundled
-covers. URLs for bundled assets use the configured UI origin. Later logins update
-email only; no separate Google-default/override columns are stored. The new
-required columns target fresh development accounts, not a production backfill.
-Time zones and sending holds are not stored yet.
+The profile/auth schema has `accounts`, `auth_sessions`, and
+`profile_deletion_challenges`. Account deletion cascades to sessions and
+challenges. An uploaded avatar's object key lives on the account; there is no
+avatar cleanup table or polling. First login saves the verified Google name/photo
+or `Account`/the default avatar and randomly selects one of three covers. Shared
+asset URLs use `MEDIA_BASE_URL`. Later logins update email only; existing saved
+URLs are not rewritten. Keep the bundled source files for seeding and for older
+accounts that still reference them. No separate Google-default/override columns
+are stored. Time zones and sending holds are not stored yet.
 
 ### Planned product APIs and schema
 
@@ -308,8 +353,7 @@ sandbox wallet checkout, then live SMS/deployment; acceptance rules are in
 
 ## Profile implementation TODO
 
-Implement these stages in order, one step at a time. Checked items are implemented
-in code, not live-verified. Editing/deletion controls remain disabled.
+Checked items are implemented in code, not necessarily live-verified.
 
 ### 1. Google defaults and profile read
 
@@ -319,8 +363,7 @@ in code, not live-verified. Editing/deletion controls remain disabled.
   development accounts; initialize them at account creation, without a backfill.
 - [x] Preserve saved name/avatar/cover on later sign-ins by updating email only.
   Keep email read-only.
-- [x] Expand `GET /api/profile` to return
-  `{ account_id, email, name, avatar_url, cover_url }`.
+- [x] Return the saved profile through `GET /api/profile`.
 - [x] Render the saved profile in the sidebar and modal through the existing
   shared account query, without blocking page rendering.
 - [ ] Manually verify first login, default assets, failed photos, reloads,
@@ -328,86 +371,68 @@ in code, not live-verified. Editing/deletion controls remain disabled.
 
 ### 2. Name editing and preset covers
 
-- [x] Bundle a default avatar and three cover images under `ui/public/profile/`;
-  randomly choose a cover on account creation.
-- [ ] Define the server-validated cover URL allowlist for editing. Covers are
-  selected from our presets, not uploaded or arbitrary URLs.
-- [ ] Implement proposed `PATCH /api/profile` for name and cover URL, with
-  server-side trimming/length checks, preset validation, account isolation, and
-  deliberate active-session/origin checks for writes.
-- [ ] Add BoardUI name and cover editors with Save/Cancel, pending/error states,
-  and shared profile-cache updates after successful saves.
-- [ ] Put reads in `ui/src/modules/auth/queries.ts` and writes in a new
-  `mutations.ts`; keep route composition and generic BoardUI components separate.
-  Extend CORS for the required PATCH, PUT, and DELETE methods as endpoints land.
+- [x] Host the shared default avatar and three covers in the local Garage preset
+  bucket; use `MEDIA_BASE_URL` for new accounts and randomly choose a cover.
+- [ ] Update existing bundled URLs without changing Google avatar URLs before
+  removing the old serving paths.
+- [x] Use one server catalog for defaults, listing covers, and resolving `cover_id`.
+- [x] Add `PATCH /api/profile` for name and cover with input validation, account
+  scoping and the shared Origin check, without session-table reads.
+- [x] Add BoardUI name and cover editors with Save/Cancel, pending/error states,
+  and shared profile-cache updates from successful save responses.
+- [x] Keep profile UI, `queries.ts` and `mutations.ts` in `ui/src/modules/profile/`,
+  with route composition and generic BoardUI components separate.
 
 ### 3. Self-hosted Rust media service and avatar uploads
 
-- [ ] Evaluate and select an efficient, open-source Rust media upload
-  service/application supporting images and videos. No project is selected yet.
-  Check licensing, maintenance, authenticated upload/delete APIs, processing,
-  resource limits, storage, and reliable deletion before choosing.
-- [ ] Deploy it as a separate service on our VPS with persistent storage, HTTPS,
-  private management credentials/network access, quotas, backups, monitoring, and
-  a documented update/restore procedure. This replaces the earlier direct
-  S3-compatible-storage recommendation; finalize storage behind the chosen service.
-- [ ] Define Payra-to-media authentication and account ownership. Clients must
-  not receive service-admin credentials or choose another account's media key.
-  Require authenticated, authorized uploads and deletion. Keep display URLs in
-  `avatar_url` and retain any service-specific identifier needed for reliable cleanup.
-- [ ] Implement proposed `PUT /api/profile/avatar` through the selected service:
-  enforce byte/dimension limits, verify decoded content, initially allow
-  JPEG/PNG/WebP rather than SVG, re-encode/strip metadata, and generate media keys
-  server-side. Bound processing time/memory and configure image/video limits.
-- [ ] Add BoardUI file selection, preview/crop, upload progress/pending/errors,
-  and effective-profile cache updates. Save owned media references in PostgreSQL,
-  not binary files or uploads in Git.
-- [ ] Handle failed uploads/database writes, abandoned files, and avatar
-  replacement with durable cleanup retries and concurrency-safe ownership checks.
+- [x] Pilot self-hosted Garage, a Rust-based S3-compatible store, for local
+  preset image uploads and reads. Payra will own media validation and processing.
+- [ ] Deploy Garage alongside Payra on the VPS with persistent storage, HTTPS
+  reads, private S3 access, quotas, off-VPS backups, monitoring, and a tested
+  restore procedure.
+- [x] Use a separate avatars bucket and scoped key; the browser does not receive
+  S3 credentials or control the object key.
+- [x] Add access-JWT-only `PUT /api/profile/avatar` with bounded image input/
+  decoding and WebP output. Save the display URL and owned object key after
+  Garage accepts the file.
+- [x] Add BoardUI file selection, preview, pending/errors, and profile-cache updates.
+- [x] After the new profile commits, try deleting the replaced object in the
+  background with one retry. Failed cleanup can leave an unused file.
+- [ ] Add photo cropping only if needed. Measure upload and idle storage resource use.
 - [ ] Verify image and video upload/delete support in the media service and
   document future video integration; this stage enables avatars, not a new
   product video-upload feature.
 
 ### 4. Account deletion
 
-- [ ] Define deletion scope and retention: remove live account-owned profile,
-  sessions, uploads, and future messages/recipients/jobs; explicitly document
-  backup expiry and any legally retained payment records.
-- [ ] Add a BoardUI destructive confirmation explaining irreversibility, requiring
-  typed `DELETE` and fresh Google reauthentication, with pending/error states.
-- [ ] Implement proposed `DELETE /api/profile`: verify a fresh Google code matches
-  the current account subject; check Origin/required request header and the active
-  session. Deliberately expose the already-validated JWT session ID for sensitive
-  writes; keep ordinary access middleware database-free.
-- [ ] Transactionally record durable media-cleanup jobs, delete account-owned
-  data/sessions, and cancel queued work. Define cascade/locking rules as each
-  product table is added so deletion cannot race with new writes or dispatch.
-- [ ] Ensure cleanup jobs survive account deletion and retry external media
-  deletion failures. Database deletion and media deletion cannot share a
-  transaction; document pending cleanup rather than claiming immediate removal.
-- [ ] After committed deletion, clear cookies and reuse existing browser-key,
-  Query/Router cache, and session-ended tab cleanup/navigation. Handle an already
-  deleted account safely; do not add request-session tracking, login generations,
-  or session-started notifications.
-- [ ] Prevent still-valid access JWTs from authorizing sensitive actions against
-  deleted accounts/sessions. Explain that Payra deletion does not delete Google
-  and that signing in again normally creates a new, empty account.
+- [x] Require inline confirmation in the BoardUI profile footer, without a Google prompt.
+- [x] Verify a browser-key proof and a nonce bound to the current active Payra
+  session before deleting.
+- [x] Delete the profile, all sessions and challenges in one DB transaction.
+  After commit, attempt to delete the current uploaded avatar with one retry.
+  Never delete shared presets or Google photos.
+- [x] Clear cookies and use the existing browser-key/cache and session-ended
+  cleanup without new session tracking.
+- [ ] Publish a backup expiry/deletion policy before production. Add deletion
+  and retention rules as product tables are introduced; there are no billing,
+  message, or recipient records yet.
 
 ### 5. Manual verification
 
 - [ ] Verify Google defaults/missing claims, fresh-account initialization, read-only
   email, edit persistence across sign-ins, preset validation, and sidebar/modal
   cache consistency.
-- [ ] Check account isolation, expired/revoked sessions, upload validation/limits,
-  service outages, interrupted/replaced uploads, concurrent edits, and eventual
-  orphan/replacement cleanup.
-- [ ] Verify fresh reauthentication and subject matching, deletion across all
+- [ ] Check account isolation, avatar validation/limits, service outages,
+  interrupted/replaced uploads, concurrent edits, and best-effort removal.
+  A failed removal must not undo a saved profile change.
+- [ ] Verify browser-proof and active-session checks, deletion across all
   sessions/tabs, stale JWT rejection for sensitive actions, concurrent work,
-  cleanup retries, retention disclosures, and empty-account re-registration.
+  best-effort avatar removal, retention disclosures, and empty-account re-registration.
 
 ## Docker and VPS
 
-Current Compose runs only PostgreSQL; everything here is planned:
+The root Compose runs PostgreSQL; `payra-media/compose.yaml` runs the local Garage
+pilot. Production deployment is planned:
 
 - Same-origin HTTPS through Caddy, `/api/*` forwarded unchanged to Axum, with a
   web service, worker, database, and one-shot migrations.
@@ -420,6 +445,9 @@ Current Compose runs only PostgreSQL; everything here is planned:
   backups/restore checks, multi-stage non-root images, secret env files excluded
   from build contexts, and runtime server secrets. The public Google ID is a UI
   build input; public API/proof URLs must match HTTPS deployment.
+- Run Garage with private S3 access and a Caddy HTTPS read endpoint. Keep shared
+  presets separate from uploads, set bucket quotas, and verify restart
+  persistence, MP4 seeking, resource use, and off-VPS backup restore.
 - Add structured diagnostics, bounded provider calls, graceful shutdown, and
   queue/unknown-outcome monitoring without logging secrets, proofs, message bodies,
   or full phone numbers.

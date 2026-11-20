@@ -6,7 +6,7 @@ See the [architecture](architecture.md) for the Axum modules, SQL transactions, 
 
 ## Current implementation boundary
 
-Google sign-in, browser-key-bound sessions, signed refresh/logout, access-JWT middleware, and `GET /api/profile` are implemented. The browser has a full BoardUI sidebar with theme/account controls and an initially empty `/analytics` page. Recipients, scheduling, credits, payments, other product pages, a worker, and production deployment remain planned. Implementation is separate from outstanding live verification; see [current state and merge checks](architecture.md#verification-and-merge-checklist).
+Google sign-in, browser-key-bound sessions, signed refresh/logout, and the profile modal are implemented. The profile supports name and preset-cover edits, Garage-backed avatar uploads when configured, and account deletion authorized by a browser-key proof. Uploaded avatars are removed on a best-effort basis after replacement or account deletion. The browser has a full BoardUI sidebar with theme/account controls. Recipients, scheduling, credits, payments, other product pages, a product worker, and production deployment remain planned. See [current state and merge checks](architecture.md#verification-and-merge-checklist) for outstanding live verification.
 
 ## Frontend navigation and loading
 
