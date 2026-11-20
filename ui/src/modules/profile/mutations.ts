@@ -19,6 +19,23 @@ export function useUpdateProfileCover() {
 	);
 }
 
+export function useUploadAvatar() {
+	return useProfileChange(
+		(file: File) =>
+			authenticatedRequest<CurrentAccount>({
+				method: "PUT",
+				url: "/api/profile/avatar",
+				headers: {
+					...writeHeaders,
+					"Content-Type": "application/octet-stream",
+				},
+				data: file,
+				timeout: 30_000,
+			}),
+		(profile) => ({ avatar_url: profile.avatar_url }),
+	);
+}
+
 function patchProfile(data: { name: string } | { cover_id: string }) {
 	return authenticatedRequest<CurrentAccount>({
 		method: "PATCH",

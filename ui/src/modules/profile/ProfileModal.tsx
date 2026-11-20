@@ -1,11 +1,12 @@
 import { RiAddLine, RiDeleteBinLine, RiMailLine } from "@remixicon/react";
-import type { ComponentProps } from "react";
+import { type ComponentProps, useState } from "react";
 import { Avatar } from "@/components/base/avatar/avatar";
 import { Button } from "@/components/base/buttons/button";
 import { CloseButton } from "@/components/base/buttons/close-button";
 import { IconButton } from "@/components/base/buttons/icon-button";
 import { Modal, ModalBody, ModalFooter } from "@/components/base/modal/modal";
 import { Skeleton } from "@/components/base/skeleton/skeleton";
+import { AvatarEditor } from "./AvatarEditor";
 import { CoverPicker } from "./CoverPicker";
 import { ProfileName } from "./ProfileName";
 import type { CurrentAccount } from "./queries";
@@ -23,6 +24,7 @@ export function ProfileModal({
 	isLoading = false,
 	...props
 }: ProfileModalProps) {
+	const [avatarEditorOpen, setAvatarEditorOpen] = useState(false);
 	const name = account?.name;
 	const avatarUrl = account?.avatar_url;
 	const initials =
@@ -63,9 +65,14 @@ export function ProfileModal({
 										<IconButton
 											icon={RiAddLine}
 											size="small"
-											aria-label="Change profile image (not available yet)"
-											title="Profile image editing is not available yet"
-											disabled
+											aria-label="Change profile image"
+											title={
+												account?.avatar_uploads_enabled
+													? "Change profile image"
+													: "Profile image uploads are unavailable"
+											}
+											disabled={!account?.avatar_uploads_enabled}
+											onClick={() => setAvatarEditorOpen(true)}
 											className="pointer-events-auto absolute end-0 top-0 size-6 rounded-full"
 										/>
 									</div>
@@ -110,6 +117,9 @@ export function ProfileModal({
 							Delete account
 						</Button>
 					</ModalFooter>
+					{avatarEditorOpen && (
+						<AvatarEditor onClose={() => setAvatarEditorOpen(false)} />
+					)}
 				</>
 			)}
 		</Modal>

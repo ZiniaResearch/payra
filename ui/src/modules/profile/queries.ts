@@ -9,6 +9,7 @@ export interface CurrentAccount {
 	avatar_url: string;
 	cover_url: string;
 	cover_id: string | null;
+	avatar_uploads_enabled: boolean;
 }
 
 export interface CoverPreset {
