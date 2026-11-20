@@ -18,8 +18,8 @@ import { cx } from "@/utils/cx";
  *
  * Interactive drag-and-drop file upload with validation, a perimeter progress
  * indicator, animated content transitions, and a completion callback. The
- * upload is simulated so the component is backend-agnostic; connect
- * `onUploadComplete` to the application's upload/storage layer.
+ * upload is simulated by default. Use `onFileSelect` to hand a validated file
+ * directly to a feature that manages its own upload.
  */
 
 const DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
@@ -31,10 +31,13 @@ type StaggerState = "shown" | "hiding" | "hidden";
 export interface FileUploadProps {
 	/** Called after the progress and success states finish. */
 	onUploadComplete?: (file: File) => void;
+	/** Receives a validated file without running the simulated upload. */
+	onFileSelect?: (file: File) => void;
 	/** Accepted filename extensions without dots. */
 	allowedExtensions?: readonly string[];
 	/** Maximum accepted file size in bytes. */
 	maxBytes?: number;
+	disabled?: boolean;
 	/** Overrides the icon shown while a file uploads. */
 	renderFileIcon?: (file: File) => ReactNode;
 	className?: string;
@@ -134,8 +137,10 @@ function ringPath(
 
 export function FileUpload({
 	onUploadComplete,
+	onFileSelect,
 	allowedExtensions = DEFAULT_EXTENSIONS,
 	maxBytes = DEFAULT_MAX_BYTES,
+	disabled = false,
 	renderFileIcon,
 	className,
 }: FileUploadProps) {
@@ -178,9 +183,19 @@ export function FileUpload({
 			timers.current.push(setTimeout(() => setRejection(null), 2600));
 			return;
 		}
-		if (nextFile.size > maxBytes) {
-			setRejection(`That file is larger than ${formatFileSize(maxBytes)}`);
+		if (nextFile.size === 0 || nextFile.size > maxBytes) {
+			setRejection(
+				nextFile.size === 0
+					? "That file is empty"
+					: `That file is larger than ${formatFileSize(maxBytes)}`,
+			);
 			timers.current.push(setTimeout(() => setRejection(null), 2600));
+			return;
+		}
+
+		setRejection(null);
+		if (onFileSelect) {
+			onFileSelect(nextFile);
 			return;
 		}
 
@@ -210,6 +225,7 @@ export function FileUpload({
 	};
 
 	const busy = phase !== "idle";
+	const canSelect = !disabled && !busy;
 	const progressPath = ringPath(box.width, box.height, 1, 15);
 	const idleReveal = useStaggerState(!busy);
 	const busyReveal = useStaggerState(busy);
@@ -224,25 +240,26 @@ export function FileUpload({
 		<div
 			ref={boxRef}
 			role="button"
-			tabIndex={busy ? -1 : 0}
+			tabIndex={canSelect ? 0 : -1}
 			aria-label="Upload a file"
-			onClick={() => !busy && inputRef.current?.click()}
+			aria-disabled={!canSelect || undefined}
+			onClick={() => canSelect && inputRef.current?.click()}
 			onKeyDown={(event) => {
-				if (!busy && (event.key === "Enter" || event.key === " ")) {
+				if (canSelect && (event.key === "Enter" || event.key === " ")) {
 					event.preventDefault();
 					inputRef.current?.click();
 				}
 			}}
 			onDragOver={(event) => {
 				event.preventDefault();
-				if (!busy) setDragOver(true);
+				if (canSelect) setDragOver(true);
 			}}
 			onDragLeave={() => setDragOver(false)}
 			onDrop={(event) => {
 				event.preventDefault();
 				setDragOver(false);
 				const droppedFile = event.dataTransfer.files?.[0];
-				if (droppedFile && !busy) startUpload(droppedFile);
+				if (droppedFile && canSelect) startUpload(droppedFile);
 			}}
 			className={cx(
 				"group relative h-[164px] w-full shrink-0 rounded-2xl outline-none",
@@ -250,6 +267,7 @@ export function FileUpload({
 				busy
 					? "bg-background-primary-default"
 					: "cursor-pointer bg-background-secondary-default",
+				disabled && "cursor-not-allowed opacity-60",
 				"focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-border-focus-ring",
 				className,
 			)}
@@ -257,6 +275,7 @@ export function FileUpload({
 			<input
 				ref={inputRef}
 				type="file"
+				disabled={!canSelect}
 				aria-label="Choose a file to upload"
 				accept={allowedExtensions.map((extension) => `.${extension}`).join(",")}
 				className="sr-only"
@@ -264,7 +283,7 @@ export function FileUpload({
 				onChange={(event) => {
 					const selectedFile = event.target.files?.[0];
 					event.target.value = "";
-					if (selectedFile) startUpload(selectedFile);
+					if (selectedFile && canSelect) startUpload(selectedFile);
 				}}
 			/>
 
