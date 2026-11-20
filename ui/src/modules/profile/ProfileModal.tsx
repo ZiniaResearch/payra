@@ -12,26 +12,24 @@ import { IconButton } from "@/components/base/buttons/icon-button";
 import { Modal, ModalBody, ModalFooter } from "@/components/base/modal/modal";
 import { Skeleton } from "@/components/base/skeleton/skeleton";
 import { ProfileName } from "./ProfileName";
+import type { CurrentAccount } from "./queries";
 
 type ProfileModalProps = Pick<
 	ComponentProps<typeof Modal>,
 	"isOpen" | "onOpenChange"
 > & {
-	name?: string;
-	avatarUrl?: string;
-	coverUrl?: string;
-	email?: string;
+	account?: CurrentAccount;
 	isLoading?: boolean;
 };
 
 export function ProfileModal({
-	name,
-	avatarUrl,
-	coverUrl,
-	email,
+	account,
 	isLoading = false,
 	...props
 }: ProfileModalProps) {
+	const name = account?.name;
+	const avatarUrl = account?.avatar_url;
+	const coverUrl = account?.cover_url;
 	const initials =
 		Array.from(name?.trim() ?? "")[0]?.toLocaleUpperCase() ?? "?";
 
@@ -114,7 +112,7 @@ export function ProfileModal({
 													<Skeleton shape="text" className="h-4 w-40" />
 												</output>
 											) : (
-												(email ?? "Email unavailable")
+												(account?.email ?? "Email unavailable")
 											)}
 										</dd>
 									</div>

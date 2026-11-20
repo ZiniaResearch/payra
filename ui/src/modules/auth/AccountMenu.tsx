@@ -7,8 +7,8 @@ import { Avatar } from "@/components/base/avatar/avatar";
 import { Button } from "@/components/base/buttons/button";
 import { Divider } from "@/components/base/divider/divider";
 import { Skeleton, SkeletonText } from "@/components/base/skeleton/skeleton";
-import { ProfileModal } from "./ProfileModal";
-import { currentAccountQueryOptions } from "./queries";
+import { ProfileModal } from "@/modules/profile/ProfileModal";
+import { currentAccountQueryOptions } from "@/modules/profile/queries";
 import { useLogout } from "./use-logout";
 
 export function AccountMenu({
@@ -114,12 +114,10 @@ export function AccountMenu({
 				</div>
 			</DashboardTeamMenu>
 			<ProfileModal
+				key={account.data?.account_id ?? "profile"}
 				isOpen={profileOpen}
 				onOpenChange={setProfileOpen}
-				name={account.data?.name}
-				avatarUrl={account.data?.avatar_url}
-				coverUrl={account.data?.cover_url}
-				email={account.data?.email}
+				account={account.data}
 				isLoading={account.isPending}
 			/>
 		</>
