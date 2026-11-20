@@ -1,9 +1,4 @@
-import {
-	RiAddLine,
-	RiDeleteBinLine,
-	RiEditLine,
-	RiMailLine,
-} from "@remixicon/react";
+import { RiAddLine, RiDeleteBinLine, RiMailLine } from "@remixicon/react";
 import type { ComponentProps } from "react";
 import { Avatar } from "@/components/base/avatar/avatar";
 import { Button } from "@/components/base/buttons/button";
@@ -11,6 +6,7 @@ import { CloseButton } from "@/components/base/buttons/close-button";
 import { IconButton } from "@/components/base/buttons/icon-button";
 import { Modal, ModalBody, ModalFooter } from "@/components/base/modal/modal";
 import { Skeleton } from "@/components/base/skeleton/skeleton";
+import { CoverPicker } from "./CoverPicker";
 import { ProfileName } from "./ProfileName";
 import type { CurrentAccount } from "./queries";
 
@@ -29,7 +25,6 @@ export function ProfileModal({
 }: ProfileModalProps) {
 	const name = account?.name;
 	const avatarUrl = account?.avatar_url;
-	const coverUrl = account?.cover_url;
 	const initials =
 		Array.from(name?.trim() ?? "")[0]?.toLocaleUpperCase() ?? "?";
 
@@ -54,24 +49,8 @@ export function ProfileModal({
 							className="flex flex-col gap-6"
 						>
 							<div className="relative mb-14">
-								<div
-									aria-hidden
-									className="h-40 bg-background-tertiary-default bg-cover bg-center"
-									style={{
-										backgroundImage: coverUrl
-											? `url(${JSON.stringify(coverUrl)})`
-											: undefined,
-									}}
-								/>
-								<IconButton
-									icon={RiEditLine}
-									size="small"
-									aria-label="Add or edit cover image (not available yet)"
-									title="Cover image editing is not available yet"
-									disabled
-									className="absolute bottom-3 end-3"
-								/>
-								<div className="absolute inset-x-0 -bottom-14 flex justify-center">
+								<CoverPicker account={account} />
+								<div className="pointer-events-none absolute inset-x-0 -bottom-14 flex justify-center">
 									<div className="relative">
 										<Avatar
 											role="img"
@@ -87,7 +66,7 @@ export function ProfileModal({
 											aria-label="Change profile image (not available yet)"
 											title="Profile image editing is not available yet"
 											disabled
-											className="absolute end-0 top-0 size-6 rounded-full"
+											className="pointer-events-auto absolute end-0 top-0 size-6 rounded-full"
 										/>
 									</div>
 								</div>

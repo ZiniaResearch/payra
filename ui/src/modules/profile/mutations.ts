@@ -12,7 +12,14 @@ export function useUpdateProfileName() {
 	);
 }
 
-function patchProfile(data: { name: string }) {
+export function useUpdateProfileCover() {
+	return useProfileChange(
+		(coverId: string) => patchProfile({ cover_id: coverId }),
+		(profile) => ({ cover_id: profile.cover_id, cover_url: profile.cover_url }),
+	);
+}
+
+function patchProfile(data: { name: string } | { cover_id: string }) {
 	return authenticatedRequest<CurrentAccount>({
 		method: "PATCH",
 		url: "/api/profile",

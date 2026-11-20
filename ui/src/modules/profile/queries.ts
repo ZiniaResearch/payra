@@ -8,6 +8,13 @@ export interface CurrentAccount {
 	name: string;
 	avatar_url: string;
 	cover_url: string;
+	cover_id: string | null;
+}
+
+export interface CoverPreset {
+	id: string;
+	label: string;
+	url: string;
 }
 
 export function currentAccountQueryOptions() {
@@ -20,6 +27,19 @@ export function currentAccountQueryOptions() {
 				signal,
 			}),
 		enabled: !import.meta.env.SSR,
+		staleTime: 60_000,
+	});
+}
+
+export function coverPresetsQueryOptions() {
+	return queryOptions({
+		queryKey: ["profile", "covers"],
+		queryFn: ({ signal }) =>
+			authenticatedRequest<CoverPreset[]>({
+				method: "GET",
+				url: "/api/profile/covers",
+				signal,
+			}),
 		staleTime: 60_000,
 	});
 }
