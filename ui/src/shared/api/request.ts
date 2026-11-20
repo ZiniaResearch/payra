@@ -65,17 +65,24 @@ export async function authenticatedRequest<T>(
 		return response.data;
 	}
 
-	return navigator.locks.request(AUTH_LOCK, async () => {
-		if (config.signal?.aborted) {
-			throw new CanceledError();
-		}
+	return navigator.locks.request(AUTH_LOCK, () =>
+		authenticatedRequestUnderLock<T>(config),
+	);
+}
 
-		const recheck = await requestWithAccess<T>(config);
+/** Use only while holding AUTH_LOCK. */
+export async function authenticatedRequestUnderLock<T>(
+	config: AxiosRequestConfig,
+): Promise<T> {
+	if (config.signal?.aborted) {
+		throw new CanceledError();
+	}
 
-		if (recheck) {
-			return recheck.data;
-		}
+	const response = await requestWithAccess<T>(config);
 
-		return refreshAndRetry<T>(config);
-	});
+	if (response) {
+		return response.data;
+	}
+
+	return refreshAndRetry<T>(config);
 }
