@@ -11,8 +11,13 @@ import { useState } from "react";
 import { SocialButton } from "@/components/base/social-button/social-button";
 import { signInWithGoogle } from "./api";
 import { generateBrowserKey } from "./browser-key";
-import { saveBrowserKey, saveBrowserSession } from "./browser-key-store";
+import {
+	loadBrowserSession,
+	saveBrowserKey,
+	saveBrowserSession,
+} from "./browser-key-store";
 import { AUTH_LOCK } from "./refresh";
+import { notifySessionStarted } from "./session-events";
 
 export function GoogleSignInButton() {
 	const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -41,21 +46,33 @@ function GoogleCodeButton() {
 		setMessage("Signing in...");
 
 		try {
-			await navigator.locks.request(AUTH_LOCK, async () => {
-				const { keyPair, publicKey } = await generateBrowserKey();
-				const keyId = await saveBrowserKey(keyPair);
-				const session = await signInWithGoogle(code, publicKey);
+			const startedSession = await navigator.locks.request(
+				AUTH_LOCK,
+				async () => {
+					// A different tab may have signed in while this popup was open.
+					if (await loadBrowserSession()) {
+						return false;
+					}
 
-				await saveBrowserSession({
-					session_id: session.session_id,
-					refresh_token_hash: session.refresh_token_hash,
-					keyId,
-				});
-				// A new login must not inherit the previous account's cached data.
-				await queryClient.cancelQueries();
-				queryClient.clear();
-				router.clearCache();
-			});
+					const { keyPair, publicKey } = await generateBrowserKey();
+					const keyId = await saveBrowserKey(keyPair);
+					const session = await signInWithGoogle(code, publicKey);
+
+					await saveBrowserSession({
+						session_id: session.session_id,
+						refresh_token_hash: session.refresh_token_hash,
+						keyId,
+					});
+					// A new login must not inherit the previous account's cached data.
+					await queryClient.cancelQueries();
+					queryClient.clear();
+					router.clearCache();
+					return true;
+				},
+			);
+			if (startedSession) {
+				notifySessionStarted();
+			}
 
 			// Page loading may itself need the auth lock, so navigate after
 			// releasing it rather than waiting on a protected loader while locked.
