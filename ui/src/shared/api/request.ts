@@ -9,6 +9,7 @@ import {
 	AUTH_LOCK,
 	AuthenticationRequiredError,
 	refreshSession,
+	SessionRecoveredError,
 } from "@/modules/auth/refresh";
 import { notifySessionEnded } from "@/modules/auth/session-events";
 import { api } from "./client";
@@ -17,9 +18,11 @@ interface ApiErrorResponse {
 	error: string;
 }
 
+type AccessRecovery = "refresh" | "confirm";
+
 async function requestWithAccess<T>(
 	config: AxiosRequestConfig,
-): Promise<AxiosResponse<T> | null> {
+): Promise<AxiosResponse<T> | AccessRecovery> {
 	try {
 		return await api.request<T>(config);
 	} catch (error) {
@@ -31,17 +34,26 @@ async function requestWithAccess<T>(
 		}
 
 		const code = error.response.data?.error;
-
-		if (code === "access_missing" || code === "access_expired") {
-			return null;
-		}
-
-		throw new AuthenticationRequiredError();
+		return code === "access_missing" || code === "access_expired"
+			? "refresh"
+			: "confirm";
 	}
 }
 
-async function refreshAndRetry<T>(config: AxiosRequestConfig): Promise<T> {
+async function refreshAndRetry<T>(
+	config: AxiosRequestConfig,
+	recovery: AccessRecovery,
+): Promise<T> {
+	if (config.signal?.aborted) {
+		throw new CanceledError();
+	}
+
 	const session = await refreshSession();
+	const method = config.method?.toUpperCase() ?? "GET";
+
+	if (recovery === "confirm" && method !== "GET" && method !== "HEAD") {
+		throw new SessionRecoveredError();
+	}
 
 	try {
 		return (await api.request<T>(config)).data;
@@ -61,21 +73,30 @@ export async function authenticatedRequest<T>(
 ): Promise<T> {
 	const response = await requestWithAccess<T>(config);
 
-	if (response) {
+	if (typeof response !== "string") {
 		return response.data;
 	}
 
-	return navigator.locks.request(AUTH_LOCK, async () => {
-		if (config.signal?.aborted) {
-			throw new CanceledError();
-		}
+	return navigator.locks.request(AUTH_LOCK, () =>
+		response === "confirm"
+			? refreshAndRetry<T>(config, response)
+			: authenticatedRequestUnderLock<T>(config),
+	);
+}
 
-		const recheck = await requestWithAccess<T>(config);
+/** Use only while holding AUTH_LOCK. */
+export async function authenticatedRequestUnderLock<T>(
+	config: AxiosRequestConfig,
+): Promise<T> {
+	if (config.signal?.aborted) {
+		throw new CanceledError();
+	}
 
-		if (recheck) {
-			return recheck.data;
-		}
+	const response = await requestWithAccess<T>(config);
 
-		return refreshAndRetry<T>(config);
-	});
+	if (typeof response !== "string") {
+		return response.data;
+	}
+
+	return refreshAndRetry<T>(config, response);
 }

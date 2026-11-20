@@ -24,6 +24,9 @@ pub(crate) struct GoogleVerifier {
 pub(crate) struct GoogleIdentity {
     pub(crate) sub: String,
     pub(crate) email: String,
+    pub(crate) name: Option<String>,
+    pub(crate) picture: Option<String>,
+    azp: Option<String>,
 }
 pub(crate) enum VerifyError {
     InvalidToken,
@@ -140,7 +143,13 @@ impl GoogleVerifier {
             .map_err(|_| VerifyError::InvalidToken)?
             .claims;
 
-        if identity.sub.trim().is_empty() || identity.email.trim().is_empty() {
+        if identity.sub.trim().is_empty()
+            || identity.email.trim().is_empty()
+            || identity
+                .azp
+                .as_deref()
+                .is_some_and(|azp| azp != self.client_id)
+        {
             return Err(VerifyError::InvalidToken);
         }
 

@@ -1,0 +1,119 @@
+import { RiAddLine, RiMailLine } from "@remixicon/react";
+import { type ComponentProps, useState } from "react";
+import { Avatar } from "@/components/base/avatar/avatar";
+import { CloseButton } from "@/components/base/buttons/close-button";
+import { IconButton } from "@/components/base/buttons/icon-button";
+import { Modal, ModalBody, ModalFooter } from "@/components/base/modal/modal";
+import { Skeleton } from "@/components/base/skeleton/skeleton";
+import { AvatarEditor } from "./AvatarEditor";
+import { CoverPicker } from "./CoverPicker";
+import { DeleteAccount } from "./DeleteAccount";
+import { ProfileName } from "./ProfileName";
+import type { CurrentAccount } from "./queries";
+
+type ProfileModalProps = Pick<
+	ComponentProps<typeof Modal>,
+	"isOpen" | "onOpenChange"
+> & {
+	account?: CurrentAccount;
+	isLoading?: boolean;
+};
+
+export function ProfileModal({
+	account,
+	isLoading = false,
+	...props
+}: ProfileModalProps) {
+	const [avatarEditorOpen, setAvatarEditorOpen] = useState(false);
+	const name = account?.name;
+	const avatarUrl = account?.avatar_url;
+	const initials =
+		Array.from(name?.trim() ?? "")[0]?.toLocaleUpperCase() ?? "?";
+
+	return (
+		<Modal
+			{...props}
+			size="lg"
+			aria-label="Profile"
+			className="relative gap-0 bg-background-secondary-default p-0"
+		>
+			{({ close }) => (
+				<>
+					<CloseButton
+						size="sm"
+						aria-label="Close profile"
+						onClick={close}
+						className="absolute end-4 top-4 z-20"
+					/>
+					<ModalBody className="p-0">
+						<section
+							aria-label="Profile information"
+							className="flex flex-col gap-6"
+						>
+							<div className="relative mb-14">
+								<CoverPicker account={account} />
+								<div className="pointer-events-none absolute inset-x-0 -bottom-14 flex justify-center">
+									<div className="relative">
+										<Avatar
+											role="img"
+											aria-label="Profile image"
+											src={avatarUrl}
+											alt=""
+											initials={initials}
+											className="size-28 border-4 border-background-secondary-default text-title-2-medium"
+										/>
+										<IconButton
+											icon={RiAddLine}
+											size="small"
+											aria-label="Change profile image"
+											title={
+												account?.avatar_uploads_enabled
+													? "Change profile image"
+													: "Profile image uploads are unavailable"
+											}
+											disabled={!account?.avatar_uploads_enabled}
+											onClick={() => setAvatarEditorOpen(true)}
+											className="pointer-events-auto absolute end-0 top-0 size-6 rounded-full"
+										/>
+									</div>
+								</div>
+							</div>
+							<div className="flex flex-col items-center gap-8 px-6 pb-6">
+								<ProfileName name={name} isLoading={isLoading} />
+								<dl className="w-full rounded-xl bg-background-primary-default p-3">
+									<div className="flex flex-wrap items-center justify-between gap-2">
+										<dt className="flex items-center gap-2 text-body-regular text-text-secondary">
+											<RiMailLine
+												className="size-4 text-foreground-icon-tertiary"
+												aria-hidden
+											/>
+											Email
+										</dt>
+										<dd
+											dir="ltr"
+											className="min-w-0 break-all text-body-medium text-text-primary"
+										>
+											{isLoading ? (
+												<output aria-label="Loading email" aria-busy="true">
+													<Skeleton shape="text" className="h-4 w-40" />
+												</output>
+											) : (
+												(account?.email ?? "Email unavailable")
+											)}
+										</dd>
+									</div>
+								</dl>
+							</div>
+						</section>
+					</ModalBody>
+					<ModalFooter className="mt-0 flex-row justify-end px-6 pb-6">
+						<DeleteAccount accountId={account?.account_id} />
+					</ModalFooter>
+					{avatarEditorOpen && (
+						<AvatarEditor onClose={() => setAvatarEditorOpen(false)} />
+					)}
+				</>
+			)}
+		</Modal>
+	);
+}

@@ -17,3 +17,18 @@ export function notifySessionEnded(sessionId: string | null): void {
 	channel.postMessage(notice);
 	channel.close();
 }
+
+export interface SessionStartedNotice {
+	type: "session-started";
+}
+
+export function notifySessionStarted(): void {
+	if (!("BroadcastChannel" in window)) {
+		return;
+	}
+
+	const channel = new BroadcastChannel(AUTH_CHANNEL);
+	const notice: SessionStartedNotice = { type: "session-started" };
+	channel.postMessage(notice);
+	channel.close();
+}

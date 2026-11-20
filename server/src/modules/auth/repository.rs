@@ -25,16 +25,28 @@ pub(super) async fn find_or_create_google_account(
     pool: &PgPool,
     google_sub: &str,
     email: &str,
+    name: &str,
+    avatar_url: &str,
+    cover_urls: &[String],
 ) -> Result<Uuid, sqlx::Error> {
     sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO accounts (google_sub, email)
-         VALUES ($1, $2)
+        "INSERT INTO accounts (google_sub, email, name, avatar_url, cover_url)
+         VALUES ($1, $2, $3, $4,
+            (
+                SELECT url
+                FROM unnest ($5::text[]) AS presets(url)
+                ORDER BY random() LIMIT 1
+            )
+         )
          ON CONFLICT (google_sub) DO UPDATE
          SET email = EXCLUDED.email
          RETURNING id",
     )
     .bind(google_sub)
     .bind(email)
+    .bind(name)
+    .bind(avatar_url)
+    .bind(cover_urls)
     .fetch_one(pool)
     .await
 }

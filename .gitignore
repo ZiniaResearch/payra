@@ -11,3 +11,4 @@ ui/.cta.json
 .env
 .env.*
 !.env.example
+/payra-media/garage.toml

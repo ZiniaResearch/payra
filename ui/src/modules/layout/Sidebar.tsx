@@ -1,4 +1,9 @@
-import { RiBarChartLine } from "@remixicon/react";
+import {
+	RiBarChartLine,
+	RiCalendarScheduleLine,
+	RiCoinLine,
+	RiMessage2Line,
+} from "@remixicon/react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { DashboardSidebar } from "@/components/application/dashboard/dashboard-sidebar";
 import { DashboardUserMenu } from "@/components/application/dashboard/dashboard-user-menu";
@@ -6,17 +11,35 @@ import { AccountMenu } from "@/modules/auth/AccountMenu";
 
 const navigation = [
 	{
+		key: "/messages/new",
+		label: "Schedule SMS",
+		icon: RiCalendarScheduleLine,
+		href: "/messages/new",
+	},
+	{
+		key: "/messages",
+		label: "Messages",
+		icon: RiMessage2Line,
+		href: "/messages",
+	},
+	{
 		key: "/analytics",
 		label: "Analytics",
 		icon: RiBarChartLine,
 		href: "/analytics",
+	},
+	{
+		key: "/billing",
+		label: "Buy Credits",
+		icon: RiCoinLine,
+		href: "/billing",
 	},
 ];
 
 export function Sidebar() {
 	const navigate = useNavigate();
 	const pathname = useRouterState({
-		select: (state) => state.location.pathname,
+		select: (state) => state.location.pathname.replace(/\/$/, ""),
 	});
 
 	return (
@@ -33,12 +56,6 @@ export function Sidebar() {
 				</DashboardUserMenu>
 			)}
 			renderTeamMenu={(props) => <AccountMenu {...props} />}
-			settingsContent={
-				<p className="py-4 text-body-regular text-text-secondary">
-					Account settings are not available yet. Appearance can be changed in
-					the sidebar.
-				</p>
-			}
 		/>
 	);
 }

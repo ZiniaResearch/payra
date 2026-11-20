@@ -6,13 +6,11 @@ import {
 	RiCalendarLine,
 	RiChatAiLine,
 	RiCloseLine,
-	RiCustomerServiceLine,
 	RiHomeLine,
 	RiImageAiLine,
 	RiKanbanView2,
 	RiMegaphoneLine,
 	RiSearchLine,
-	RiSettings4Line,
 	RiSideBarFill,
 	RiUserSmileLine,
 } from "@remixicon/react";
@@ -26,7 +24,6 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { SettingsModal } from "@/components/application/settings/settings-modal";
 import { ThemeToggle } from "@/components/application/theme/theme-toggle";
 import { Counter } from "@/components/base/badges/counter";
 import { CloseButton } from "@/components/base/buttons/close-button";
@@ -109,7 +106,6 @@ function NavItem({
 	isSelected?: boolean;
 	collapsed?: boolean;
 	href?: string;
-	/** Action rows (e.g. Settings → modal) intercept the navigation. */
 	onClick?: () => void;
 	onNavigate?: (href: string) => void;
 }) {
@@ -262,22 +258,19 @@ function NavRows({
 	query,
 	selected,
 	collapsed,
-	secondaryMatch,
 	onNavigate,
 }: {
 	items: DashboardNavItem[];
 	query: string;
 	selected: string;
 	collapsed: boolean;
-	/** Whether Support or Settings matches, so "No results" only shows when nothing does. */
-	secondaryMatch: boolean;
 	onNavigate?: (href: string) => void;
 }) {
 	const localize = useTemplateCopy();
 	const shown = items.filter((item) =>
 		item.label.toLocaleLowerCase().includes(query),
 	);
-	if (shown.length === 0 && !secondaryMatch && !collapsed) {
+	if (shown.length === 0 && !collapsed) {
 		return localize(
 			<p className="px-2 py-3 text-body-regular text-text-tertiary">
 				No results
@@ -318,7 +311,6 @@ export function DashboardSidebar({
 	className,
 	renderUserMenu,
 	renderTeamMenu,
-	settingsContent,
 	onNavigate,
 }: {
 	/** Rendered inside the mobile drawer: always expanded, close button instead of collapse. */
@@ -345,12 +337,10 @@ export function DashboardSidebar({
 	renderTeamMenu?: (
 		props: ComponentProps<typeof DashboardTeamMenu>,
 	) => ReactNode;
-	settingsContent?: ReactNode;
 	onNavigate?: (href: string) => void;
 } = {}) {
 	const localize = useTemplateCopy();
 	const [collapsedState, setCollapsed] = useState(false);
-	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [suppressUserHover, setSuppressUserHover] = useState(false);
 	const [searchActive, setSearchActive] = useState(false);
 	const [query, setQuery] = useState("");
@@ -360,10 +350,6 @@ export function DashboardSidebar({
 	const fade = useScrollFade();
 	const collapsed = mobile ? false : collapsedState;
 	const normalizedQuery = query.trim().toLocaleLowerCase();
-	const matches = (label: string) =>
-		label.toLocaleLowerCase().includes(normalizedQuery);
-	const secondaryLabels = ["Support", "Settings"];
-	const secondaryMatch = secondaryLabels.some(matches);
 	const userMenuProps = {
 		collapsed,
 		suppressHover: suppressUserHover,
@@ -657,7 +643,6 @@ export function DashboardSidebar({
 								query={normalizedQuery}
 								selected={selected}
 								collapsed={collapsed}
-								secondaryMatch={secondaryMatch}
 								onNavigate={onNavigate}
 							/>
 						</nav>
@@ -683,24 +668,6 @@ export function DashboardSidebar({
 							className={flat ? "!bg-background-secondary-default" : undefined}
 						/>
 					))}
-				{/* Secondary nav */}
-				<nav className="flex w-full flex-col gap-1">
-					{matches("Support") && (
-						<NavItem
-							icon={RiCustomerServiceLine}
-							label="Support"
-							collapsed={collapsed}
-						/>
-					)}
-					{matches("Settings") && (
-						<NavItem
-							icon={RiSettings4Line}
-							label="Settings"
-							collapsed={collapsed}
-							onClick={() => setSettingsOpen(true)}
-						/>
-					)}
-				</nav>
 
 				{/* Team card → opens the profile menu next to the sidebar */}
 				{renderTeamMenu ? (
@@ -715,14 +682,6 @@ export function DashboardSidebar({
 					/>
 				)}
 			</div>
-
-			<SettingsModal
-				isOpen={settingsOpen}
-				onClose={() => setSettingsOpen(false)}
-				renderPage={
-					settingsContent !== undefined ? () => settingsContent : undefined
-				}
-			/>
 		</aside>,
 	);
 }

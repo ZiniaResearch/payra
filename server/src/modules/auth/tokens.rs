@@ -1,8 +1,3 @@
-//! Issues JWTs and verifies access tokens locally.
-//!
-//! Access verification checks signatures and claims, not database sessions.
-//! Refresh-token fingerprints bind future browser proofs to the cookie token.
-
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use jsonwebtoken::{
@@ -29,18 +24,19 @@ struct AccessClaims {
     exp: i64,
 }
 
-/// Identity extracted only after validating an access JWT.
-///
-/// Private fields prevent other modules from constructing unverified identity.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct AccessIdentity {
     account_id: Uuid,
+    session_id: Uuid,
 }
 
 impl AccessIdentity {
-    /// Returns the account ID to use when scoping protected business queries.
     pub(crate) fn account_id(&self) -> Uuid {
         self.account_id
+    }
+
+    pub(crate) fn session_id(&self) -> Uuid {
+        self.session_id
     }
 }
 
@@ -55,7 +51,6 @@ struct RefreshClaims {
     exp: i64,
 }
 
-/// Signed refresh credentials. The session counter is checked in a transaction.
 pub(super) struct RefreshIdentity {
     pub(super) session_id: Uuid,
     pub(super) counter: i64,
@@ -80,14 +75,11 @@ pub(crate) struct TokenSigner {
 }
 
 impl TokenSigner {
-    /// Prepares signing keys and access-verification rules at server startup.
     pub(crate) fn new(access_secret: &str, refresh_secret: &str) -> Self {
-        // Fix the allowed algorithm rather than trusting the JWT header.
         let mut access_validation = Validation::new(Algorithm::HS256);
         access_validation.set_issuer(&[ISSUER]);
         access_validation.set_audience(&[ACCESS_AUDIENCE]);
         access_validation.set_required_spec_claims(&["exp", "iss", "aud", "sub"]);
-        // Do not extend access lifetime beyond its expiration time.
         access_validation.leeway = 0;
         access_validation.validate_nbf = true;
 
@@ -108,10 +100,6 @@ impl TokenSigner {
         }
     }
 
-    /// Verifies the refresh JWT with its separate key, audience, and token type.
-    ///
-    /// # Errors
-    /// Rejects invalid/expired tokens, malformed session IDs, and invalid counters.
     pub(super) fn verify_refresh(&self, token: &str) -> Result<RefreshIdentity, Error> {
         let claims = decode::<RefreshClaims>(
             token,
@@ -133,15 +121,7 @@ impl TokenSigner {
         })
     }
 
-    /// Verifies the access signature, algorithm, issuer, audience, type, and expiry.
-    ///
-    /// This is synchronous: no Google requests or database queries are performed.
-    ///
-    /// # Errors
-    /// Returns an error for invalid/expired JWTs or malformed account/session IDs.
     pub(crate) fn verify_access(&self, token: &str) -> Result<AccessIdentity, Error> {
-        // decode verifies the signature and validation rules before returning claims.
-        // Merely Base64-decoding a JWT would not establish authentication.
         let claims = decode::<AccessClaims>(
             token,
             &self.access_verification_key,
@@ -153,15 +133,17 @@ impl TokenSigner {
             return Err(ErrorKind::InvalidToken.into());
         }
 
-        // Parse IDs into UUIDs so downstream handlers do not use unchecked strings.
         let account_id =
             Uuid::parse_str(&claims.sub).map_err(|_| Error::from(ErrorKind::InvalidToken))?;
-        Uuid::parse_str(&claims.sid).map_err(|_| Error::from(ErrorKind::InvalidToken))?;
+        let session_id =
+            Uuid::parse_str(&claims.sid).map_err(|_| Error::from(ErrorKind::InvalidToken))?;
 
-        Ok(AccessIdentity { account_id })
+        Ok(AccessIdentity {
+            account_id,
+            session_id,
+        })
     }
 
-    /// Signs access/refresh JWTs using the session's actual counter and deadlines.
     pub(crate) fn issue(
         &self,
         account_id: Uuid,
@@ -201,12 +183,11 @@ impl TokenSigner {
             exp: refresh_expires_at,
         };
 
-        // HMAC-SHA256 for signing.
         let header = Header::new(Algorithm::HS256);
 
         let access_token = encode(&header, &access_claims, &self.access_key)?;
         let refresh_token = encode(&header, &refresh_claims, &self.refresh_key)?;
-        let refresh_token_hash = hash_refresh_token(&refresh_token);
+        let refresh_token_hash = hash_proof_token(&refresh_token);
 
         Ok(IssuedTokens {
             access_token,
@@ -218,7 +199,7 @@ impl TokenSigner {
     }
 }
 
-pub(super) fn hash_refresh_token(token: &str) -> String {
+pub(super) fn hash_proof_token(token: &str) -> String {
     let digest = Sha256::digest(token.as_bytes());
     URL_SAFE_NO_PAD.encode(digest)
 }

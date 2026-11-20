@@ -177,6 +177,8 @@ export function DashboardTeamMenu({
 	summary,
 	children,
 	footer,
+	isOpen: controlledOpen,
+	onOpenChange,
 }: {
 	collapsed?: boolean;
 	className?: string;
@@ -188,11 +190,18 @@ export function DashboardTeamMenu({
 	summary?: ReactNode;
 	children?: ReactNode;
 	footer?: ReactNode;
+	isOpen?: boolean;
+	onOpenChange?: (isOpen: boolean) => void;
 }) {
 	const localize = useTemplateCopy();
 	const languageSelector = useTemplateLanguageSelector();
 	const direction = useDirection();
-	const [isOpen, setIsOpen] = useState(false);
+	const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+	const isOpen = controlledOpen ?? uncontrolledOpen;
+	function setIsOpen(open: boolean) {
+		setUncontrolledOpen(open);
+		onOpenChange?.(open);
+	}
 	// "right" placement assumes room to the sidebar's right (true in-flow on
 	// desktop) — on mobile the sidebar can span the full viewport, so the
 	// 265px panel would render off-screen. Below sm, drop into a plain
@@ -332,7 +341,9 @@ export function DashboardTeamMenu({
 					</div>
 
 					{/* Footer */}
-					{footer ?? (
+					{footer !== undefined ? (
+						footer
+					) : (
 						<div className="flex w-full items-center justify-between px-2 pt-1 pb-2">
 							<span className="text-body-2-medium whitespace-nowrap text-text-tertiary">
 								BoardUI

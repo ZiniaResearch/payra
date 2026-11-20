@@ -10,8 +10,10 @@ mod routes;
 mod tokens;
 
 pub(crate) use self::{
+    cookies::clear_session_cookie_headers,
     google::GoogleVerifier,
     middleware::require_access,
+    proof::{ProofPurpose, verify_browser_proof},
     routes::routes,
     tokens::{AccessIdentity, TokenSigner},
 };

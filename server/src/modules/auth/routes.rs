@@ -1,17 +1,12 @@
-//! Login, refresh, and logout routes. JWTs are only delivered in HttpOnly cookies.
-//!
-//! Response JSON contains only the session ID and refresh-token fingerprint.
-//! The actual access and refresh JWTs are delivered in HttpOnly cookies.
-
 use super::{browser_key, cookies, google::VerifyError, logout, refresh, repository};
-use crate::state::AppState;
+use crate::{
+    modules::profile::{COVER_PRESETS, default_avatar_url},
+    state::AppState,
+};
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, State},
-    http::{
-        HeaderMap, HeaderValue, StatusCode,
-        header::{CACHE_CONTROL, ORIGIN},
-    },
+    http::{HeaderValue, StatusCode, header::CACHE_CONTROL},
     response::{IntoResponse, Response},
     routing::post,
 };
@@ -24,15 +19,12 @@ struct GoogleLoginRequest {
     browser_public_key: Value,
 }
 
-// This is intentionally separate from IssuedTokens so raw JWTs cannot
-// accidentally be included in the JSON sent to browser JavaScript.
 #[derive(Serialize)]
 pub(super) struct SessionResponse {
     pub(super) session_id: String,
     pub(super) refresh_token_hash: String,
 }
 
-/// Refresh stays outside access-JWT middleware so expired access can be renewed.
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/auth/google", post(google_login))
@@ -46,24 +38,10 @@ pub(crate) fn routes() -> Router<AppState> {
         )
 }
 
-/// Verifies Google identity and binds a new session to the browser public key.
-///
-/// On success, returns HTTP 200 with two cookies and non-secret metadata.
-/// On failure, returns an HTTP error without issuing authentication cookies.
 async fn google_login(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Json(request): Json<GoogleLoginRequest>,
 ) -> Result<Response, StatusCode> {
-    if headers.get(ORIGIN) != Some(&state.ui_origin)
-        || headers
-            .get("x-requested-with")
-            .and_then(|value| value.to_str().ok())
-            != Some("XmlHttpRequest")
-    {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     if request.code.trim().is_empty() {
         return Err(StatusCode::BAD_REQUEST);
     }
@@ -83,10 +61,37 @@ async fn google_login(
         }
     };
 
+    let default_avatar_url = default_avatar_url(&state.media_base_url);
+    let cover_urls = COVER_PRESETS.map(|preset| preset.url(&state.media_base_url));
+
+    let name = identity
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or("Account");
+
+    let avatar_url = identity
+        .picture
+        .as_deref()
+        .map(str::trim)
+        .filter(|picture| {
+            reqwest::Url::parse(picture).is_ok_and(|url| {
+                url.scheme() == "https"
+                    && url.host_str().is_some()
+                    && url.username().is_empty()
+                    && url.password().is_none()
+            })
+        })
+        .unwrap_or(default_avatar_url.as_str());
+
     let account_id = match repository::find_or_create_google_account(
         &state.pool,
         &identity.sub,
         &identity.email,
+        name,
+        avatar_url,
+        &cover_urls,
     )
     .await
     {
