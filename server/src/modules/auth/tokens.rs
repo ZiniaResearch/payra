@@ -27,11 +27,16 @@ struct AccessClaims {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct AccessIdentity {
     account_id: Uuid,
+    session_id: Uuid,
 }
 
 impl AccessIdentity {
     pub(crate) fn account_id(&self) -> Uuid {
         self.account_id
+    }
+
+    pub(crate) fn session_id(&self) -> Uuid {
+        self.session_id
     }
 }
 
@@ -130,9 +135,13 @@ impl TokenSigner {
 
         let account_id =
             Uuid::parse_str(&claims.sub).map_err(|_| Error::from(ErrorKind::InvalidToken))?;
-        Uuid::parse_str(&claims.sid).map_err(|_| Error::from(ErrorKind::InvalidToken))?;
+        let session_id =
+            Uuid::parse_str(&claims.sid).map_err(|_| Error::from(ErrorKind::InvalidToken))?;
 
-        Ok(AccessIdentity { account_id })
+        Ok(AccessIdentity {
+            account_id,
+            session_id,
+        })
     }
 
     pub(crate) fn issue(
@@ -178,7 +187,7 @@ impl TokenSigner {
 
         let access_token = encode(&header, &access_claims, &self.access_key)?;
         let refresh_token = encode(&header, &refresh_claims, &self.refresh_key)?;
-        let refresh_token_hash = hash_refresh_token(&refresh_token);
+        let refresh_token_hash = hash_proof_token(&refresh_token);
 
         Ok(IssuedTokens {
             access_token,
@@ -190,7 +199,7 @@ impl TokenSigner {
     }
 }
 
-pub(super) fn hash_refresh_token(token: &str) -> String {
+pub(super) fn hash_proof_token(token: &str) -> String {
     let digest = Sha256::digest(token.as_bytes());
     URL_SAFE_NO_PAD.encode(digest)
 }

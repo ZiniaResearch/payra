@@ -1,4 +1,4 @@
-use super::tokens::hash_refresh_token;
+use super::tokens::hash_proof_token;
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header, jwk::Jwk};
 use reqwest::Url;
@@ -20,9 +20,10 @@ struct BrowserProofClaims {
     ath: String,
 }
 
-pub(super) enum ProofPurpose {
+pub(crate) enum ProofPurpose {
     Refresh,
     Logout,
+    DeleteProfile,
 }
 
 impl ProofPurpose {
@@ -30,6 +31,7 @@ impl ProofPurpose {
         match self {
             Self::Refresh => "payra-refresh-proof+jwt",
             Self::Logout => "payra-logout-proof+jwt",
+            Self::DeleteProfile => "payra-delete-profile-proof+jwt",
         }
     }
 
@@ -37,14 +39,22 @@ impl ProofPurpose {
         match self {
             Self::Refresh => "/api/auth/refresh",
             Self::Logout => "/api/auth/logout",
+            Self::DeleteProfile => "/api/profile",
+        }
+    }
+
+    fn method(&self) -> &'static str {
+        match self {
+            Self::Refresh | Self::Logout => "POST",
+            Self::DeleteProfile => "DELETE",
         }
     }
 }
 
-pub(super) fn verify_browser_proof(
+pub(crate) fn verify_browser_proof(
     proof: &str,
     public_key: &Value,
-    refresh_token: &str,
+    proof_token: &str,
     session_id: Uuid,
     api_origin: &Url,
     purpose: ProofPurpose,
@@ -81,10 +91,10 @@ pub(super) fn verify_browser_proof(
     let claims = token.claims;
     let now = Utc::now().timestamp();
 
-    claims.htm == "POST"
+    claims.htm == purpose.method()
         && claims.htu == target_url.as_str()
         && claims.sid == session_id.to_string()
-        && claims.ath == hash_refresh_token(refresh_token)
+        && claims.ath == hash_proof_token(proof_token)
         && claims.iat >= now.saturating_sub(MAX_AGE_SECONDS)
         && claims.iat <= now.saturating_add(FUTURE_SKEW_SECONDS)
 }

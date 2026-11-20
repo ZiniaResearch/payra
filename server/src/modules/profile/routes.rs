@@ -1,5 +1,5 @@
 use super::{
-    avatar,
+    avatar, deletion,
     presets::COVER_PRESETS,
     repository::{self, AccountProfile},
 };
@@ -9,7 +9,7 @@ use axum::{
     extract::{DefaultBodyLimit, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, put},
+    routing::{get, post, put},
 };
 use serde::{Deserialize, Serialize};
 use sqlx::types::Uuid;
@@ -86,13 +86,15 @@ pub(crate) fn routes() -> Router<AppState> {
             "/api/profile",
             get(profile)
                 .patch(update_profile)
-                .layer(DefaultBodyLimit::max(4096)),
+                .delete(deletion::delete_account)
+                .layer(DefaultBodyLimit::max(8192)),
         )
         .route("/api/profile/covers", get(covers))
         .route(
             "/api/profile/avatar",
             put(avatar::upload).layer(DefaultBodyLimit::max(avatar::MAX_UPLOAD_BYTES)),
         )
+        .route("/api/profile/deletion", post(deletion::prepare))
 }
 
 async fn covers(State(state): State<AppState>) -> Json<[CoverResponse; COVER_PRESETS.len()]> {

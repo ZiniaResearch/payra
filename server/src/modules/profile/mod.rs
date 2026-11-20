@@ -1,5 +1,6 @@
 mod avatar;
 mod avatar_storage;
+mod deletion;
 mod presets;
 mod repository;
 mod routes;

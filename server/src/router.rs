@@ -19,6 +19,7 @@ pub(crate) fn build(state: AppState) -> Router {
             Method::POST,
             Method::PATCH,
             Method::PUT,
+            Method::DELETE,
         ])
         .allow_headers([CONTENT_TYPE, HeaderName::from_static("x-requested-with")])
         .allow_credentials(true);

@@ -38,7 +38,7 @@ pub(super) fn read_cookie<'a>(
     Ok(token)
 }
 
-pub(super) fn clear_session_cookie_headers() -> HeaderMap {
+pub(crate) fn clear_session_cookie_headers() -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.append(
         SET_COOKIE,
