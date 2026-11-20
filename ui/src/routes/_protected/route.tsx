@@ -1,9 +1,19 @@
-import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { DirectionProvider } from "@/components/foundations/direction/direction";
+import { loadBrowserSession } from "@/modules/auth/browser-key-store";
 import { Sidebar } from "@/modules/layout/Sidebar";
 
 export const Route = createFileRoute("/_protected")({
 	ssr: false,
+	beforeLoad: async () => {
+		if (import.meta.env.SSR) return;
+
+		const session = await loadBrowserSession().catch(() => undefined);
+
+		if (!session) {
+			throw redirect({ to: "/login", replace: true });
+		}
+	},
 	component: ProtectedLayout,
 });
 
