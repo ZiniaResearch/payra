@@ -32,19 +32,21 @@ pub(super) async fn find_account_profile(
     .await
 }
 
-pub(super) async fn update_account_name(
+pub(super) async fn update_profile(
     pool: &PgPool,
     account_id: Uuid,
-    name: &str,
+    name: Option<&str>,
+    cover_url: Option<&str>,
 ) -> Result<Option<AccountProfile>, sqlx::Error> {
     sqlx::query_as(
         "UPDATE accounts
-         SET name = $2
+         SET name = COALESCE($2, name), cover_url = COALESCE($3, cover_url)
          WHERE id = $1
          RETURNING email, name, avatar_url, cover_url",
     )
     .bind(account_id)
     .bind(name)
+    .bind(cover_url)
     .fetch_optional(pool)
     .await
 }

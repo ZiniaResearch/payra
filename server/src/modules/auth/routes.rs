@@ -1,5 +1,8 @@
 use super::{browser_key, cookies, google::VerifyError, logout, refresh, repository};
-use crate::state::AppState;
+use crate::{
+    modules::profile::{COVER_PRESETS, default_avatar_url},
+    state::AppState,
+};
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, State},
@@ -57,15 +60,9 @@ async fn google_login(
             return Err(StatusCode::SERVICE_UNAVAILABLE);
         }
     };
-    let ui_origin = state
-        .ui_origin
-        .to_str()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .trim_end_matches('/');
 
-    let default_avatar_url = format!("{ui_origin}/profile/default-profile.webp");
-
-    let cover_urls = [1, 2, 3].map(|number| format!("{ui_origin}/profile/cover-{number}.webp"));
+    let default_avatar_url = default_avatar_url(&state.media_base_url);
+    let cover_urls = COVER_PRESETS.map(|preset| preset.url(&state.media_base_url));
 
     let name = identity
         .name

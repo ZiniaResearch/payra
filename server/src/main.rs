@@ -37,6 +37,7 @@ async fn serve() -> Result<(), Box<dyn Error>> {
         ui_origin,
         token_signer,
         api_origin,
+        media_base_url: settings.media_base_url,
     };
     let app = router::build(state);
 
