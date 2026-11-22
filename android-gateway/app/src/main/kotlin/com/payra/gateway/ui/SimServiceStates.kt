@@ -19,7 +19,7 @@ internal fun rememberSimServiceStates(
     }
 
     LifecycleResumeEffect(context, subscriptionIds, refreshVersion) {
-        val stopWatchers = subscriptionIds.map { id ->
+        val stopWatchers = subscriptionIds.mapNotNull { id ->
             watchSimService(context, id) { inService ->
                 serviceStates.value = serviceStates.value + (id to inService)
             }

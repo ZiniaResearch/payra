@@ -7,16 +7,19 @@ import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresApi
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 
 @MainThread
 internal fun watchSimService(
     context: Context,
     subscriptionId: Int,
     onServiceChanged: (Boolean) -> Unit,
-): () -> Unit {
+): (() -> Unit)? {
     val telephony = context.getSystemService(TelephonyManager::class.java)
         ?.createForSubscriptionId(subscriptionId)
-        ?: return {}
+        ?: return null
 
     var watching = true
     val reportState: (ServiceState) -> Unit = { state ->
@@ -32,15 +35,25 @@ internal fun watchSimService(
             registerLegacyServiceListener(telephony, reportState)
         }
     } catch (_: SecurityException) {
-        return {}
+        return null
     } catch (_: UnsupportedOperationException) {
-        return {}
+        return null
     }
 
     return {
         watching = false
         stopListening()
     }
+}
+
+internal fun observeSimService(context: Context, subscriptionId: Int): Flow<Boolean?> = callbackFlow {
+    val stopWatching = watchSimService(context, subscriptionId) { trySend(it) }
+    if (stopWatching == null) {
+        trySend(null)
+        close()
+        return@callbackFlow
+    }
+    awaitClose { stopWatching() }
 }
 
 @RequiresApi(Build.VERSION_CODES.S)
