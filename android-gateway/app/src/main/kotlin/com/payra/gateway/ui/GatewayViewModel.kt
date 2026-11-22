@@ -7,10 +7,14 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.payra.gateway.sms.ActiveSim
+import com.payra.gateway.storage.GatewayRunPreference
 import com.payra.gateway.storage.GatewaySettings
 import com.payra.gateway.storage.SendingSim
 import java.io.IOException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 internal sealed interface GatewayScreenState {
@@ -27,6 +31,14 @@ internal sealed interface GatewayScreenState {
 internal class GatewayViewModel(application: Application) : AndroidViewModel(application) {
     private val settings = GatewaySettings(application)
     private var loadJob: Job? = null
+
+    val isGatewayPaused = settings.configuration
+        .map { it.runPreference == GatewayRunPreference.Paused }
+        .distinctUntilChanged()
+        .catch { error ->
+            if (error !is IOException) throw error
+            emit(false)
+        }
 
     var state by mutableStateOf<GatewayScreenState>(GatewayScreenState.Loading)
         private set
