@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">Payra Gateway</string>
+    <string name="hello_world">Gigidy!</string>
+    <string name="allow_sms">Allow SMS</string>
+    <string name="sms_permission_granted">SMS permission granted</string>
+    <string name="test_sms_number">Test number with country code</string>
+    <string name="send_test_sms">Send test SMS</string>
+    <string name="test_sms_body">Hello from Payra Gateway.</string>
+    <string name="sms_sent">SMS sent</string>
+    <string name="sms_no_service">Send failed. No mobile service.</string>
+    <string name="sms_radio_off">Send failed. The mobile radio is off.</string>
+    <string name="sms_send_failed">Send failed. Android result code %1$d.</string>
+</resources>
