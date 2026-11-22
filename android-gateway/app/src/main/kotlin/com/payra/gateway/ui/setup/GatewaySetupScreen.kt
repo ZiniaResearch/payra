@@ -15,7 +15,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.payra.gateway.sms.ActiveSim
 import com.payra.gateway.sms.readActiveSims
 import com.payra.gateway.storage.SendingSim
-import com.payra.gateway.ui.permissions.GatewayPermission
+import com.payra.gateway.permissions.GatewayPermission
 import com.payra.gateway.ui.permissions.openGatewayAppSettings
 import com.payra.gateway.ui.permissions.rememberGatewayPermissionRequest
 import com.payra.gateway.ui.rememberSimServiceStates

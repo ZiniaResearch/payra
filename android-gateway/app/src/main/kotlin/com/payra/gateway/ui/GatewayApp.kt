@@ -39,6 +39,7 @@ internal fun GatewayApp(viewModel: GatewayViewModel) {
             } else {
                 GatewayStatusScreen(
                     sendingSim = sendingSim,
+                    isGatewayPaused = viewModel.isGatewayPaused,
                     onOpenSettings = { viewModel.setChangingSim(true) },
                 )
             }

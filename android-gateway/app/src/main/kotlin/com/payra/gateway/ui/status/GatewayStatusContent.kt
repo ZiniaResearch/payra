@@ -27,6 +27,8 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.payra.gateway.R
+import com.payra.gateway.runtime.GatewayPhase
+import com.payra.gateway.runtime.titleRes
 import com.payra.gateway.ui.permissions.PermissionAccess
 
 internal data class GatewayStatusUiState(
@@ -34,6 +36,11 @@ internal data class GatewayStatusUiState(
     val serviceLabel: String,
     val phoneAccess: PermissionAccess,
     val smsAccess: PermissionAccess,
+    val notificationAccess: PermissionAccess?,
+    val phase: GatewayPhase,
+    val isPaused: Boolean,
+    val isPausing: Boolean,
+    val pauseFailed: Boolean,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,9 +50,14 @@ internal fun GatewayStatusContent(
     onOpenSettings: () -> Unit,
     onAllowSimAccess: () -> Unit,
     onAllowSms: () -> Unit,
+    onAllowNotifications: () -> Unit,
     onOpenAppSettings: () -> Unit,
+    onStart: () -> Unit,
+    onPause: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Scaffold(
+        modifier = modifier,
         topBar = {
             TopAppBar(
                 title = { Text(text = stringResource(R.string.app_name)) },
@@ -76,6 +88,13 @@ internal fun GatewayStatusContent(
                     onAllowSms = onAllowSms,
                     onOpenAppSettings = onOpenAppSettings,
                 )
+            } else {
+                GatewayOperationCard(
+                    state = state,
+                    onStart = onStart,
+                    onPause = onPause,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
 
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -89,6 +108,80 @@ internal fun GatewayStatusContent(
                     )
                     Text(text = state.simLabel, style = MaterialTheme.typography.titleLarge)
                     Text(text = state.serviceLabel, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+
+            val notificationAccess = state.notificationAccess
+            if (state.phase.isMonitoring && notificationAccess != null && !notificationAccess.isGranted) {
+                Text(
+                    text = stringResource(R.string.gateway_notifications_optional),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (notificationAccess.canRequest) {
+                    TextButton(onClick = onAllowNotifications) {
+                        Text(text = stringResource(R.string.gateway_allow_notifications))
+                    }
+                } else {
+                    TextButton(onClick = onOpenAppSettings) {
+                        Text(text = stringResource(R.string.gateway_open_app_settings))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GatewayOperationCard(
+    state: GatewayStatusUiState,
+    onStart: () -> Unit,
+    onPause: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val phase = state.phase
+    val showPaused = phase == GatewayPhase.STOPPED && state.isPaused
+    val title = if (showPaused) R.string.gateway_runtime_paused else phase.titleRes
+    val description = when (phase) {
+        GatewayPhase.STOPPED -> if (showPaused) {
+            R.string.gateway_runtime_paused_description
+        } else {
+            R.string.gateway_runtime_stopped_description
+        }
+        GatewayPhase.STARTING, GatewayPhase.CHECKING_SIM, GatewayPhase.PERMISSION_REQUIRED -> null
+        GatewayPhase.RUNNING -> R.string.gateway_runtime_running_description
+        GatewayPhase.WAITING_FOR_SIM -> R.string.gateway_runtime_waiting_for_sim_description
+        GatewayPhase.WAITING_FOR_SERVICE -> R.string.gateway_runtime_waiting_for_service_description
+        GatewayPhase.SIM_STATUS_UNAVAILABLE -> R.string.gateway_runtime_sim_status_unavailable_description
+        GatewayPhase.START_FAILED -> R.string.gateway_runtime_start_failed_description
+        GatewayPhase.SETTINGS_UNAVAILABLE -> R.string.gateway_runtime_settings_unavailable_description
+    }
+    Card(modifier = modifier) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(title),
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                style = MaterialTheme.typography.titleLarge,
+            )
+            if (description != null) {
+                Text(text = stringResource(description), style = MaterialTheme.typography.bodyMedium)
+            }
+            if (state.pauseFailed) {
+                Text(
+                    text = stringResource(R.string.gateway_runtime_pause_failed),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            if (phase.isMonitoring) {
+                val label = if (state.isPausing) R.string.gateway_runtime_pausing else R.string.gateway_runtime_pause
+                TextButton(onClick = onPause, enabled = !state.isPausing) {
+                    Text(text = stringResource(label))
+                }
+            } else if (phase != GatewayPhase.PERMISSION_REQUIRED) {
+                Button(onClick = onStart, enabled = phase != GatewayPhase.STARTING) {
+                    Text(text = stringResource(R.string.gateway_runtime_start))
                 }
             }
         }

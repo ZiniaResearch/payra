@@ -1,10 +1,8 @@
 package com.payra.gateway.ui.permissions
 
-import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
@@ -20,14 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.payra.gateway.R
-
-internal enum class GatewayPermission(val androidName: String) {
-    PHONE(Manifest.permission.READ_PHONE_STATE),
-    SMS(Manifest.permission.SEND_SMS);
-
-    fun isGranted(context: Context): Boolean =
-        context.checkSelfPermission(androidName) == PackageManager.PERMISSION_GRANTED
-}
+import com.payra.gateway.permissions.GatewayPermission
 
 internal enum class PermissionAccess {
     GRANTED,
