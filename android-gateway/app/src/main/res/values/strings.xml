@@ -33,4 +33,30 @@
 <string name="gateway_sim_in_service">Cellular service available</string>
 <string name="gateway_sim_no_service">No cellular service</string>
 <string name="gateway_sim_service_unknown">Cellular service unconfirmed</string>
+
+<string name="gateway_notification_channel">Gateway status</string>
+<string name="gateway_runtime_stopped">Stopped</string>
+<string name="gateway_runtime_stopped_description">Start Payra to monitor the sending SIM with the screen locked.</string>
+<string name="gateway_runtime_starting">Starting gateway…</string>
+<string name="gateway_runtime_checking_sim">Checking sending SIM…</string>
+<string name="gateway_runtime_running">Running</string>
+<string name="gateway_runtime_running_description">Payra is monitoring the sending SIM. You can lock the phone.</string>
+<string name="gateway_runtime_waiting_for_sim">Waiting for saved SIM</string>
+<string name="gateway_runtime_waiting_for_sim_description">Restore the saved SIM or choose another one in Settings.</string>
+<string name="gateway_runtime_waiting_for_service">Waiting for cellular service</string>
+<string name="gateway_runtime_waiting_for_service_description">Payra will resume when the saved SIM regains service.</string>
+<string name="gateway_runtime_sim_status_unavailable">SIM status unavailable</string>
+<string name="gateway_runtime_sim_status_unavailable_description">Payra is running, but Android couldn’t report the SIM status.</string>
+<string name="gateway_runtime_paused">Paused</string>
+<string name="gateway_runtime_paused_description">The gateway stays paused after a reboot. Tap Start when you’re ready.</string>
+<string name="gateway_runtime_start_failed">Couldn’t start the gateway</string>
+<string name="gateway_runtime_start_failed_description">Android blocked the service. Try starting it again from this screen.</string>
+<string name="gateway_runtime_settings_unavailable">Gateway settings unavailable</string>
+<string name="gateway_runtime_settings_unavailable_description">Payra couldn’t read or update its settings. Try starting again.</string>
+<string name="gateway_runtime_start">Start</string>
+<string name="gateway_runtime_pause">Pause</string>
+<string name="gateway_runtime_pausing">Pausing…</string>
+<string name="gateway_runtime_pause_failed">Couldn’t pause the gateway. Try again.</string>
+<string name="gateway_notifications_optional">Allow notifications to see gateway status in the Android notification shade.</string>
+<string name="gateway_allow_notifications">Allow notifications</string>
 </resources>
