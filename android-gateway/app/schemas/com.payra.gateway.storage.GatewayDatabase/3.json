@@ -1,0 +1,156 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "3f5b663c2d7c906766a286acf8a156d4",
+    "entities": [
+      {
+        "tableName": "sms_jobs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`serverUrl` TEXT NOT NULL, `id` TEXT NOT NULL, `recipient` TEXT NOT NULL, `message` TEXT NOT NULL, `state` TEXT NOT NULL DEFAULT 'QUEUED', `attemptId` TEXT, `startedAtMillis` INTEGER, `partCount` INTEGER, `finishedAtMillis` INTEGER, `errorCode` INTEGER, `attemptNumber` INTEGER NOT NULL DEFAULT 1, `retryable` INTEGER NOT NULL DEFAULT 0, `reportFrozen` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`serverUrl`, `id`))",
+        "fields": [
+          {
+            "fieldPath": "serverUrl",
+            "columnName": "serverUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recipient",
+            "columnName": "recipient",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "message",
+            "columnName": "message",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'QUEUED'"
+          },
+          {
+            "fieldPath": "attemptId",
+            "columnName": "attemptId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "startedAtMillis",
+            "columnName": "startedAtMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "partCount",
+            "columnName": "partCount",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "finishedAtMillis",
+            "columnName": "finishedAtMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "errorCode",
+            "columnName": "errorCode",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "attemptNumber",
+            "columnName": "attemptNumber",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "retryable",
+            "columnName": "retryable",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "reportFrozen",
+            "columnName": "reportFrozen",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "serverUrl",
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sms_jobs_state_serverUrl",
+            "unique": false,
+            "columnNames": [
+              "state",
+              "serverUrl"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sms_jobs_state_serverUrl` ON `${TABLE_NAME}` (`state`, `serverUrl`)"
+          },
+          {
+            "name": "index_sms_jobs_serverUrl_finishedAtMillis",
+            "unique": false,
+            "columnNames": [
+              "serverUrl",
+              "finishedAtMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sms_jobs_serverUrl_finishedAtMillis` ON `${TABLE_NAME}` (`serverUrl`, `finishedAtMillis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "sms_send_parts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`attemptId` TEXT NOT NULL, `partIndex` INTEGER NOT NULL, `resultCode` INTEGER NOT NULL, PRIMARY KEY(`attemptId`, `partIndex`))",
+        "fields": [
+          {
+            "fieldPath": "attemptId",
+            "columnName": "attemptId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "partIndex",
+            "columnName": "partIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "resultCode",
+            "columnName": "resultCode",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "attemptId",
+            "partIndex"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '3f5b663c2d7c906766a286acf8a156d4')"
+    ]
+  }
+}
