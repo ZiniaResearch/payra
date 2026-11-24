@@ -6,7 +6,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.payra.gateway.network.GatewayServer
 import com.payra.gateway.sms.ActiveSim
+import com.payra.gateway.storage.GatewayAppearance
+import com.payra.gateway.storage.GatewayConfiguration
 import com.payra.gateway.storage.GatewayRunPreference
 import com.payra.gateway.storage.GatewaySettings
 import com.payra.gateway.storage.SendingSim
@@ -14,15 +17,25 @@ import java.io.IOException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+
+internal enum class GatewayPage {
+    HOME,
+    SETTINGS,
+    SENDING_SIM,
+    SERVER,
+    APPEARANCE,
+}
 
 internal sealed interface GatewayScreenState {
     data object Loading : GatewayScreenState
     data object LoadFailed : GatewayScreenState
     data class Ready(
-        val sendingSim: SendingSim?,
-        val isChangingSim: Boolean = false,
+        val configuration: GatewayConfiguration,
+        val page: GatewayPage = GatewayPage.HOME,
+        val serverBackPage: GatewayPage = GatewayPage.SETTINGS,
         val isSaving: Boolean = false,
         val saveFailed: Boolean = false,
     ) : GatewayScreenState
@@ -48,29 +61,47 @@ internal class GatewayViewModel(application: Application) : AndroidViewModel(app
         state = GatewayScreenState.Loading
         loadJob = viewModelScope.launch {
             state = try {
-                GatewayScreenState.Ready(settings.readSendingSim())
+                GatewayScreenState.Ready(settings.configuration.first())
             } catch (_: IOException) {
                 GatewayScreenState.LoadFailed
             }
         }
     }
 
-    fun setChangingSim(isChanging: Boolean) {
+    fun openPage(page: GatewayPage) {
         val current = state as? GatewayScreenState.Ready ?: return
         if (current.isSaving) return
-        state = current.copy(isChangingSim = isChanging, saveFailed = false)
+        val backPage = if (page == GatewayPage.SERVER) current.page else current.serverBackPage
+        state = current.copy(page = page, serverBackPage = backPage, saveFailed = false)
     }
 
     fun saveSim(sim: ActiveSim) {
         val current = state as? GatewayScreenState.Ready ?: return
-        if (current.isSaving || (current.sendingSim != null && !current.isChangingSim)) return
-
-        state = current.copy(isSaving = true, saveFailed = false)
+        if (current.configuration.sendingSim != null && current.page != GatewayPage.SENDING_SIM) return
         val sendingSim = SendingSim(sim.subscriptionId, sim.slotNumber, sim.carrierName)
+        saveSettings { settings.saveSendingSim(sendingSim) }
+    }
+
+    fun saveServer(server: GatewayServer) = saveSettings { settings.saveServer(server) }
+
+    fun skipServerSetup() = saveSettings { settings.skipServerSetup() }
+
+    fun removeServer() = saveSettings { settings.removeServer() }
+
+    fun saveAppearance(appearance: GatewayAppearance) = saveSettings(page = GatewayPage.APPEARANCE) {
+        settings.saveAppearance(appearance)
+    }
+
+    private fun saveSettings(
+        page: GatewayPage = GatewayPage.HOME,
+        save: suspend () -> GatewayConfiguration,
+    ) {
+        val current = state as? GatewayScreenState.Ready ?: return
+        if (current.isSaving) return
+        state = current.copy(isSaving = true, saveFailed = false)
         viewModelScope.launch {
             state = try {
-                settings.saveSendingSim(sendingSim)
-                GatewayScreenState.Ready(sendingSim)
+                GatewayScreenState.Ready(configuration = save(), page = page)
             } catch (_: IOException) {
                 current.copy(isSaving = false, saveFailed = true)
             }

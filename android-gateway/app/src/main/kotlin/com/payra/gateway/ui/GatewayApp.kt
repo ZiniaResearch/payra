@@ -14,36 +14,88 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.payra.gateway.R
+import com.payra.gateway.storage.GatewayAppearance
+import com.payra.gateway.ui.settings.AppearanceSettingsScreen
+import com.payra.gateway.ui.settings.GatewaySettingsScreen
+import com.payra.gateway.ui.settings.ServerSettingsScreen
 import com.payra.gateway.ui.setup.GatewaySetupScreen
 import com.payra.gateway.ui.status.GatewayStatusScreen
+import com.payra.gateway.ui.theme.GatewayTheme
 
 @Composable
 internal fun GatewayApp(viewModel: GatewayViewModel) {
-    when (val state = viewModel.state) {
-        GatewayScreenState.Loading -> GatewayLoadingScreen()
-        GatewayScreenState.LoadFailed -> GatewayLoadingScreen(onRetry = viewModel::loadSettings)
-        is GatewayScreenState.Ready -> {
-            val sendingSim = state.sendingSim
-            if (sendingSim == null || state.isChangingSim) {
-                GatewaySetupScreen(
-                    savedSim = sendingSim,
-                    isSaving = state.isSaving,
-                    saveFailed = state.saveFailed,
-                    onSaveSim = viewModel::saveSim,
-                    onBack = if (sendingSim != null) {
-                        { viewModel.setChangingSim(false) }
-                    } else {
-                        null
-                    },
-                )
-            } else {
-                GatewayStatusScreen(
-                    sendingSim = sendingSim,
-                    isGatewayPaused = viewModel.isGatewayPaused,
-                    onOpenSettings = { viewModel.setChangingSim(true) },
-                )
-            }
+    val state = viewModel.state
+    val appearance = (state as? GatewayScreenState.Ready)?.configuration?.appearance
+        ?: GatewayAppearance.SYSTEM
+    GatewayTheme(appearance = appearance) {
+        when (state) {
+            GatewayScreenState.Loading -> GatewayLoadingScreen()
+            GatewayScreenState.LoadFailed -> GatewayLoadingScreen(onRetry = viewModel::loadSettings)
+            is GatewayScreenState.Ready -> GatewayReadyScreen(state, viewModel)
         }
+    }
+}
+
+@Composable
+private fun GatewayReadyScreen(state: GatewayScreenState.Ready, viewModel: GatewayViewModel) {
+    val configuration = state.configuration
+    val sendingSim = configuration.sendingSim
+    if (sendingSim == null) {
+        GatewaySetupScreen(
+            savedSim = null,
+            isSaving = state.isSaving,
+            saveFailed = state.saveFailed,
+            onSaveSim = viewModel::saveSim,
+            onBack = null,
+        )
+        return
+    }
+
+    val firstServerSetup = !configuration.serverSetupComplete
+    val page = if (firstServerSetup) GatewayPage.SERVER else state.page
+    val serverAddress = configuration.serverBaseUrl?.toString()
+    when (page) {
+        GatewayPage.HOME -> GatewayStatusScreen(
+            sendingSim = sendingSim,
+            serverAddress = serverAddress,
+            isGatewayPaused = viewModel.isGatewayPaused,
+            onOpenSettings = { viewModel.openPage(GatewayPage.SETTINGS) },
+            onConfigureServer = { viewModel.openPage(GatewayPage.SERVER) },
+        )
+        GatewayPage.SETTINGS -> GatewaySettingsScreen(
+            sendingSim = sendingSim,
+            serverAddress = serverAddress,
+            appearance = configuration.appearance,
+            onChooseSim = { viewModel.openPage(GatewayPage.SENDING_SIM) },
+            onConfigureServer = { viewModel.openPage(GatewayPage.SERVER) },
+            onChangeAppearance = { viewModel.openPage(GatewayPage.APPEARANCE) },
+            onBack = { viewModel.openPage(GatewayPage.HOME) },
+        )
+        GatewayPage.SENDING_SIM -> GatewaySetupScreen(
+            savedSim = sendingSim,
+            isSaving = state.isSaving,
+            saveFailed = state.saveFailed,
+            onSaveSim = viewModel::saveSim,
+            onBack = { viewModel.openPage(GatewayPage.SETTINGS) },
+        )
+        GatewayPage.SERVER -> ServerSettingsScreen(
+            serverAddress = serverAddress,
+            heartbeat = configuration.heartbeat,
+            isFirstSetup = firstServerSetup,
+            isSaving = state.isSaving,
+            saveFailed = state.saveFailed,
+            onSave = viewModel::saveServer,
+            onSkip = viewModel::skipServerSetup,
+            onRemove = viewModel::removeServer,
+            onBack = { viewModel.openPage(state.serverBackPage) },
+        )
+        GatewayPage.APPEARANCE -> AppearanceSettingsScreen(
+            appearance = configuration.appearance,
+            isSaving = state.isSaving,
+            saveFailed = state.saveFailed,
+            onChange = viewModel::saveAppearance,
+            onBack = { viewModel.openPage(GatewayPage.SETTINGS) },
+        )
     }
 }
 

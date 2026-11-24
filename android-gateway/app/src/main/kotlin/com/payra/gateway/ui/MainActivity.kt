@@ -5,7 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import com.payra.gateway.ui.theme.GatewayTheme
 
 class MainActivity : ComponentActivity() {
     private val gatewayViewModel: GatewayViewModel by viewModels()
@@ -18,9 +17,7 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            GatewayTheme {
-                GatewayApp(gatewayViewModel)
-            }
+            GatewayApp(gatewayViewModel)
         }
     }
 }

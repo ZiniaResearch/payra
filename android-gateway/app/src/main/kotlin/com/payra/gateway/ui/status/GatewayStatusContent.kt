@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.payra.gateway.R
+import com.payra.gateway.network.GatewayConnectionStatus
 import com.payra.gateway.runtime.GatewayPhase
 import com.payra.gateway.runtime.titleRes
 import com.payra.gateway.ui.permissions.PermissionAccess
@@ -38,6 +39,9 @@ internal data class GatewayStatusUiState(
     val smsAccess: PermissionAccess,
     val notificationAccess: PermissionAccess?,
     val phase: GatewayPhase,
+    val serverAddress: String?,
+    val connectionStatus: GatewayConnectionStatus,
+    val lastWorkNotice: String?,
     val isPaused: Boolean,
     val isPausing: Boolean,
     val pauseFailed: Boolean,
@@ -48,6 +52,7 @@ internal data class GatewayStatusUiState(
 internal fun GatewayStatusContent(
     state: GatewayStatusUiState,
     onOpenSettings: () -> Unit,
+    onConfigureServer: () -> Unit,
     onAllowSimAccess: () -> Unit,
     onAllowSms: () -> Unit,
     onAllowNotifications: () -> Unit,
@@ -96,6 +101,14 @@ internal fun GatewayStatusContent(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+
+            ServerConnectionCard(
+                serverAddress = state.serverAddress,
+                status = state.connectionStatus,
+                lastWorkNotice = state.lastWorkNotice,
+                onConfigureServer = onConfigureServer,
+                modifier = Modifier.fillMaxWidth(),
+            )
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
@@ -165,7 +178,9 @@ private fun GatewayOperationCard(
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 style = MaterialTheme.typography.titleLarge,
             )
-            if (description != null) {
+            if (state.serverAddress == null) {
+                Text(text = stringResource(R.string.gateway_server_required_to_start))
+            } else if (description != null) {
                 Text(text = stringResource(description), style = MaterialTheme.typography.bodyMedium)
             }
             if (state.pauseFailed) {
@@ -180,8 +195,45 @@ private fun GatewayOperationCard(
                     Text(text = stringResource(label))
                 }
             } else if (phase != GatewayPhase.PERMISSION_REQUIRED) {
-                Button(onClick = onStart, enabled = phase != GatewayPhase.STARTING) {
+                Button(onClick = onStart, enabled = phase != GatewayPhase.STARTING && state.serverAddress != null) {
                     Text(text = stringResource(R.string.gateway_runtime_start))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ServerConnectionCard(
+    serverAddress: String?,
+    status: GatewayConnectionStatus,
+    lastWorkNotice: String?,
+    onConfigureServer: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(modifier = modifier) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(stringResource(R.string.gateway_server_connection), style = MaterialTheme.typography.labelLarge)
+            val title = if (serverAddress == null) R.string.gateway_server_address_needed else status.titleRes
+            Text(
+                text = stringResource(title),
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                style = MaterialTheme.typography.titleLarge,
+            )
+            if (serverAddress == null) {
+                TextButton(onClick = onConfigureServer) {
+                    Text(stringResource(R.string.gateway_set_up_server))
+                }
+            } else {
+                Text(serverAddress, style = MaterialTheme.typography.bodyMedium)
+                if (lastWorkNotice != null) {
+                    Text(
+                        text = stringResource(R.string.gateway_last_work_notice, lastWorkNotice),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
         }

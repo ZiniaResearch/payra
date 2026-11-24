@@ -5,13 +5,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import com.payra.gateway.storage.GatewayAppearance
 
 @Composable
-fun GatewayTheme(content: @Composable () -> Unit) {
-    val colors = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
+internal fun GatewayTheme(appearance: GatewayAppearance, content: @Composable () -> Unit) {
+    val darkTheme = when (appearance) {
+        GatewayAppearance.SYSTEM -> isSystemInDarkTheme()
+        GatewayAppearance.LIGHT -> false
+        GatewayAppearance.DARK -> true
+    }
 
     MaterialTheme(
-        colorScheme = colors,
+        colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme(),
         content = content,
     )
 }

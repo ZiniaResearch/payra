@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 internal enum class GatewayPermission(val androidName: String) {
     PHONE(Manifest.permission.READ_PHONE_STATE),
     SMS(Manifest.permission.SEND_SMS),
+    LOCAL_NETWORK(Manifest.permission.ACCESS_LOCAL_NETWORK),
     NOTIFICATIONS(Manifest.permission.POST_NOTIFICATIONS);
 
     fun isGranted(context: Context): Boolean =

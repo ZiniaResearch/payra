@@ -1,6 +1,7 @@
 package com.payra.gateway.ui.status
 
 import android.os.Build
+import android.text.format.DateFormat
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,13 +24,16 @@ import com.payra.gateway.ui.permissions.openGatewayAppSettings
 import com.payra.gateway.ui.permissions.rememberGatewayPermissionRequest
 import com.payra.gateway.ui.rememberSimServiceStates
 import com.payra.gateway.ui.simLabel
+import java.util.Date
 import kotlinx.coroutines.flow.Flow
 
 @Composable
 internal fun GatewayStatusScreen(
     sendingSim: SendingSim,
+    serverAddress: String?,
     isGatewayPaused: Flow<Boolean>,
     onOpenSettings: () -> Unit,
+    onConfigureServer: () -> Unit,
 ) {
     val context = LocalContext.current
     val runtime by GatewayRuntime.state.collectAsStateWithLifecycle()
@@ -104,16 +108,20 @@ internal fun GatewayStatusScreen(
             smsAccess = smsPermission.access,
             notificationAccess = notificationPermission?.access,
             phase = phase,
+            serverAddress = serverAddress,
+            connectionStatus = runtime.connectionStatus,
+            lastWorkNotice = runtime.lastWorkNoticeAtMillis?.let { DateFormat.getTimeFormat(context).format(Date(it)) },
             isPaused = isPaused,
             isPausing = runtime.isPausing,
             pauseFailed = runtime.pauseFailed,
         ),
         onOpenSettings = onOpenSettings,
+        onConfigureServer = onConfigureServer,
         onAllowSimAccess = { requestPermission(phonePermission.request) },
         onAllowSms = { requestPermission(smsPermission.request) },
         onAllowNotifications = { notificationPermission?.let { requestPermission(it.request) } },
         onOpenAppSettings = { openGatewayAppSettings(context) },
-        onStart = { GatewayRuntime.start(context) },
+        onStart = { if (serverAddress != null) GatewayRuntime.start(context) },
         onPause = { GatewayRuntime.pause(context) },
     )
 }
