@@ -13,4 +13,5 @@ internal data class SmsPartTotals(
     val received: Int,
     val failed: Int,
     val errorCode: Int?,
+    val temporaryFailures: Int,
 )
