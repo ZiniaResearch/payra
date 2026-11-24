@@ -13,7 +13,7 @@
 <string name="gateway_sms_permission_denied">Allow SMS to finish setup. Your SIM choice is kept.</string>
 <string name="gateway_save">Save</string>
 <string name="gateway_back">Back</string>
-<string name="gateway_saving_sim">Saving…</string>
+<string name="gateway_saving">Saving…</string>
 <string name="gateway_save_sim_failed">Couldn’t save the sending SIM. Try again.</string>
 <string name="gateway_loading_settings">Loading gateway settings…</string>
 <string name="gateway_load_settings_failed">Couldn’t read the gateway settings.</string>
@@ -36,7 +36,7 @@
 
 <string name="gateway_notification_channel">Gateway status</string>
 <string name="gateway_runtime_stopped">Stopped</string>
-<string name="gateway_runtime_stopped_description">Start Payra to monitor the sending SIM with the screen locked.</string>
+<string name="gateway_runtime_stopped_description">Start Payra to connect to the server and monitor the sending SIM with the screen locked.</string>
 <string name="gateway_runtime_starting">Starting gateway…</string>
 <string name="gateway_runtime_checking_sim">Checking sending SIM…</string>
 <string name="gateway_runtime_running">Running</string>
@@ -44,7 +44,7 @@
 <string name="gateway_runtime_waiting_for_sim">Waiting for saved SIM</string>
 <string name="gateway_runtime_waiting_for_sim_description">Restore the saved SIM or choose another one in Settings.</string>
 <string name="gateway_runtime_waiting_for_service">Waiting for cellular service</string>
-<string name="gateway_runtime_waiting_for_service_description">Payra will resume when the saved SIM regains service.</string>
+<string name="gateway_runtime_waiting_for_service_description">The saved SIM needs cellular service to send SMS.</string>
 <string name="gateway_runtime_sim_status_unavailable">SIM status unavailable</string>
 <string name="gateway_runtime_sim_status_unavailable_description">Payra is running, but Android couldn’t report the SIM status.</string>
 <string name="gateway_runtime_paused">Paused</string>
@@ -59,4 +59,38 @@
 <string name="gateway_runtime_pause_failed">Couldn’t pause the gateway. Try again.</string>
 <string name="gateway_notifications_optional">Allow notifications to see gateway status in the Android notification shade.</string>
 <string name="gateway_allow_notifications">Allow notifications</string>
+<string name="gateway_notification_status">%1$s · %2$s</string>
+
+<string name="gateway_set_up_server">Set up server</string>
+<string name="gateway_server_connection">Server connection</string>
+<string name="gateway_server_url">Server URL</string>
+<string name="gateway_server_url_hint">Enter your server’s base URL, without /gateway.</string>
+<string name="gateway_server_invalid_url">Enter a valid HTTPS base URL, like https://gateway.example.com.</string>
+<string name="gateway_server_invalid_debug_url">Enter a valid HTTP or HTTPS base URL.</string>
+<string name="gateway_server_save_and_continue">Save and continue</string>
+<string name="gateway_server_skip">Set up later</string>
+<string name="gateway_server_remove">Remove address</string>
+<string name="gateway_server_remove_title">Remove server address?</string>
+<string name="gateway_server_remove_description">Payra will pause and close the connection. Save a server URL to start again.</string>
+<string name="gateway_remove">Remove</string>
+<string name="gateway_cancel">Cancel</string>
+<string name="gateway_settings_save_failed">Couldn’t save the settings. Try again.</string>
+<string name="gateway_server_required_to_start">Save a server URL to enable Start.</string>
+<string name="gateway_server_address_needed">Server address needed</string>
+<string name="gateway_server_disconnected">Disconnected</string>
+<string name="gateway_server_connecting">Connecting to server…</string>
+<string name="gateway_server_connected">Connected</string>
+<string name="gateway_server_offline">Waiting for a network</string>
+<string name="gateway_server_reconnecting">Reconnecting to server…</string>
+<string name="gateway_last_work_notice">Last work notice at %1$s</string>
+<string name="gateway_heartbeat_interval">Heartbeat interval · %1$s</string>
+<string name="gateway_heartbeat_30">30 seconds</string>
+<string name="gateway_heartbeat_60">1 minute</string>
+<string name="gateway_heartbeat_120">2 minutes</string>
+<string name="gateway_allow_local_network">Allow local network access</string>
+<string name="gateway_local_network_description">Allow local network access if your server is on the same network as this phone.</string>
+<string name="gateway_appearance">Appearance</string>
+<string name="gateway_theme_system">Follow system</string>
+<string name="gateway_theme_light">Light</string>
+<string name="gateway_theme_dark">Dark</string>
 </resources>

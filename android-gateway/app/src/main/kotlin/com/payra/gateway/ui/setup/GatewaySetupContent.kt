@@ -21,6 +21,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.payra.gateway.R
+import com.payra.gateway.ui.InlineLoadingLabel
 import com.payra.gateway.sms.ActiveSim
 import com.payra.gateway.storage.SendingSim
 import com.payra.gateway.ui.permissions.PermissionAccess
@@ -141,7 +142,7 @@ private fun SimSelectionForm(
 
     Button(onClick = onSubmit, enabled = state.canSubmit && !state.isSaving) {
         if (state.isSaving) {
-            InlineLoadingLabel(text = stringResource(R.string.gateway_saving_sim))
+            InlineLoadingLabel(text = stringResource(R.string.gateway_saving))
         } else {
             val label = if (isSettings) R.string.gateway_save else R.string.gateway_continue
             Text(text = stringResource(label))

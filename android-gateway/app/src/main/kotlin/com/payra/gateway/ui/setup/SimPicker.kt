@@ -17,6 +17,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.payra.gateway.R
+import com.payra.gateway.ui.InlineLoadingLabel
 import com.payra.gateway.sms.ActiveSim
 import com.payra.gateway.ui.simLabel
 
