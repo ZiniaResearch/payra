@@ -13,3 +13,4 @@ ui/.cta.json
 !.env.example
 /payra-media/garage.toml
 android-gateway/local.properties
+/payra-gateway-test/gateway-test.sqlite*
