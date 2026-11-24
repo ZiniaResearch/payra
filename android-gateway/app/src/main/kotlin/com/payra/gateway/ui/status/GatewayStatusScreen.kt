@@ -24,6 +24,7 @@ import com.payra.gateway.sms.ActiveSim
 import com.payra.gateway.sms.readActiveSims
 import com.payra.gateway.storage.GatewayDatabase
 import com.payra.gateway.storage.SendingSim
+import com.payra.gateway.storage.SmsQueueOverview
 import com.payra.gateway.ui.permissions.openGatewayAppSettings
 import com.payra.gateway.ui.permissions.rememberGatewayPermissionRequest
 import com.payra.gateway.ui.rememberSimServiceStates
@@ -116,7 +117,7 @@ internal fun GatewayStatusScreen(
             serverAddress = serverAddress,
             connectionStatus = runtime.connectionStatus,
             lastWorkNotice = runtime.lastWorkNoticeAtMillis?.let { DateFormat.getTimeFormat(context).format(Date(it)) },
-            savedJobCount = savedJobCount(serverAddress),
+            smsQueue = smsQueueOverview(serverAddress),
             isPaused = isPaused,
             isPausing = runtime.isPausing,
             pauseFailed = runtime.pauseFailed,
@@ -133,19 +134,19 @@ internal fun GatewayStatusScreen(
 }
 
 @Composable
-private fun savedJobCount(serverAddress: String?): Int? {
+private fun smsQueueOverview(serverAddress: String?): SmsQueueOverview? {
     if (serverAddress == null) return null
 
     val context = LocalContext.current.applicationContext
     return key(context, serverAddress) {
-        val counts = remember {
-            val storedCounts: Flow<Int?> = GatewayDatabase.getInstance(context).smsJobs().observeCount(serverAddress)
-            storedCounts.catch { error ->
+        val overview = remember {
+            val stored: Flow<SmsQueueOverview?> = GatewayDatabase.getInstance(context).smsJobs().observeOverview(serverAddress)
+            stored.catch { error ->
                 if (error !is SQLiteException) throw error
-                Log.w("GatewayClaims", "Could not read saved job count (${error.javaClass.simpleName})")
+                Log.w("GatewaySms", "Could not read the SMS queue (${error.javaClass.simpleName})")
                 emit(null)
             }
         }
-        counts.collectAsStateWithLifecycle(initialValue = null).value
+        overview.collectAsStateWithLifecycle(initialValue = null).value
     }
 }

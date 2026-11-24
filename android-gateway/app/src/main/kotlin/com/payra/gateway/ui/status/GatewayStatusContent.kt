@@ -2,6 +2,7 @@ package com.payra.gateway.ui.status
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -19,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -30,6 +32,7 @@ import com.payra.gateway.R
 import com.payra.gateway.network.GatewayConnectionStatus
 import com.payra.gateway.runtime.GatewayPhase
 import com.payra.gateway.runtime.titleRes
+import com.payra.gateway.storage.SmsQueueOverview
 import com.payra.gateway.ui.permissions.PermissionAccess
 
 internal data class GatewayStatusUiState(
@@ -42,7 +45,7 @@ internal data class GatewayStatusUiState(
     val serverAddress: String?,
     val connectionStatus: GatewayConnectionStatus,
     val lastWorkNotice: String?,
-    val savedJobCount: Int?,
+    val smsQueue: SmsQueueOverview?,
     val isPaused: Boolean,
     val isPausing: Boolean,
     val pauseFailed: Boolean,
@@ -107,10 +110,13 @@ internal fun GatewayStatusContent(
                 serverAddress = state.serverAddress,
                 status = state.connectionStatus,
                 lastWorkNotice = state.lastWorkNotice,
-                savedJobCount = state.savedJobCount,
                 onConfigureServer = onConfigureServer,
                 modifier = Modifier.fillMaxWidth(),
             )
+
+            state.smsQueue?.let { queue ->
+                SmsQueueCard(queue = queue, modifier = Modifier.fillMaxWidth())
+            }
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
@@ -175,11 +181,27 @@ private fun GatewayOperationCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                text = stringResource(title),
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                style = MaterialTheme.typography.titleLarge,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(title),
+                    modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                if (phase.isMonitoring) {
+                    val label = if (state.isPausing) R.string.gateway_runtime_pausing else R.string.gateway_runtime_pause
+                    Button(onClick = onPause, enabled = !state.isPausing) {
+                        Text(text = stringResource(label))
+                    }
+                } else if (phase != GatewayPhase.PERMISSION_REQUIRED) {
+                    Button(onClick = onStart, enabled = phase != GatewayPhase.STARTING && state.serverAddress != null) {
+                        Text(text = stringResource(R.string.gateway_runtime_start))
+                    }
+                }
+            }
             if (state.serverAddress == null) {
                 Text(text = stringResource(R.string.gateway_server_required_to_start))
             } else if (description != null) {
@@ -191,16 +213,6 @@ private fun GatewayOperationCard(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
-            if (phase.isMonitoring) {
-                val label = if (state.isPausing) R.string.gateway_runtime_pausing else R.string.gateway_runtime_pause
-                TextButton(onClick = onPause, enabled = !state.isPausing) {
-                    Text(text = stringResource(label))
-                }
-            } else if (phase != GatewayPhase.PERMISSION_REQUIRED) {
-                Button(onClick = onStart, enabled = phase != GatewayPhase.STARTING && state.serverAddress != null) {
-                    Text(text = stringResource(R.string.gateway_runtime_start))
-                }
-            }
         }
     }
 }
@@ -210,7 +222,6 @@ private fun ServerConnectionCard(
     serverAddress: String?,
     status: GatewayConnectionStatus,
     lastWorkNotice: String?,
-    savedJobCount: Int?,
     onConfigureServer: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -232,13 +243,6 @@ private fun ServerConnectionCard(
                 }
             } else {
                 Text(serverAddress, style = MaterialTheme.typography.bodyMedium)
-                if (savedJobCount != null) {
-                    Text(
-                        text = stringResource(R.string.gateway_saved_job_count, savedJobCount),
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
                 if (lastWorkNotice != null) {
                     Text(
                         text = stringResource(R.string.gateway_last_work_notice, lastWorkNotice),
