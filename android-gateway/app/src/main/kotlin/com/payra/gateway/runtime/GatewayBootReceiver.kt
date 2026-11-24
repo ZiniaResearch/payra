@@ -41,7 +41,7 @@ class GatewayBootReceiver : BroadcastReceiver() {
     private suspend fun restoreGateway(context: Context) {
         val configuration = GatewaySettings(context).configuration.first()
         val enabled = configuration.runPreference as? GatewayRunPreference.Enabled ?: return
-        if (configuration.sendingSim == null || !hasRequiredGatewayPermissions(context)) return
+        if (!configuration.canStart || !hasRequiredGatewayPermissions(context)) return
         if (withContext(Dispatchers.IO) { wasStoppedByUser(context, enabled.sinceMillis) }) return
         GatewayRuntime.start(context, restore = true)
     }

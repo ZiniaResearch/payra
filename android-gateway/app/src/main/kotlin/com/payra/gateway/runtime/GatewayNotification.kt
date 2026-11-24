@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import com.payra.gateway.R
+import com.payra.gateway.network.GatewayConnectionStatus
 import com.payra.gateway.ui.MainActivity
 
 internal class GatewayNotification(private val context: Context) {
@@ -22,13 +23,23 @@ internal class GatewayNotification(private val context: Context) {
         )
     }
 
-    fun build(phase: GatewayPhase, ongoing: Boolean = true): Notification {
+    fun build(
+        phase: GatewayPhase,
+        ongoing: Boolean = true,
+        connection: GatewayConnectionStatus? = null,
+    ): Notification {
         val openApp = Intent(context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val phaseLabel = context.getString(phase.titleRes)
+        val status = if (connection == null) phaseLabel else context.getString(
+            R.string.gateway_notification_status,
+            phaseLabel,
+            context.getString(connection.titleRes),
+        )
         return Notification.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_gateway_notification)
             .setContentTitle(context.getString(R.string.app_name))
-            .setContentText(context.getString(phase.titleRes))
+            .setContentText(status)
             .setContentIntent(PendingIntent.getActivity(context, 0, openApp, PendingIntent.FLAG_IMMUTABLE))
             .setVisibility(Notification.VISIBILITY_PRIVATE)
             .setOngoing(ongoing)
@@ -37,8 +48,8 @@ internal class GatewayNotification(private val context: Context) {
             .build()
     }
 
-    fun update(phase: GatewayPhase) {
-        postIfAllowed(ID, phase, ongoing = true)
+    fun update(state: GatewayRuntimeState) {
+        postIfAllowed(ID, state.phase, ongoing = true, connection = state.connectionStatus)
     }
 
     fun showAttention(phase: GatewayPhase) {
@@ -49,10 +60,15 @@ internal class GatewayNotification(private val context: Context) {
         manager.cancel(ATTENTION_ID)
     }
 
-    private fun postIfAllowed(id: Int, phase: GatewayPhase, ongoing: Boolean) {
+    private fun postIfAllowed(
+        id: Int,
+        phase: GatewayPhase,
+        ongoing: Boolean,
+        connection: GatewayConnectionStatus? = null,
+    ) {
         if (!manager.areNotificationsEnabled()) return
         try {
-            manager.notify(id, build(phase, ongoing))
+            manager.notify(id, build(phase, ongoing, connection))
         } catch (_: SecurityException) {
             // Notification access can change between the check and the post.
         }
@@ -64,6 +80,15 @@ internal class GatewayNotification(private val context: Context) {
         private const val CHANNEL_ID = "gateway_status"
     }
 }
+
+internal val GatewayConnectionStatus.titleRes: Int
+    get() = when (this) {
+        GatewayConnectionStatus.DISCONNECTED -> R.string.gateway_server_disconnected
+        GatewayConnectionStatus.CONNECTING -> R.string.gateway_server_connecting
+        GatewayConnectionStatus.CONNECTED -> R.string.gateway_server_connected
+        GatewayConnectionStatus.OFFLINE -> R.string.gateway_server_offline
+        GatewayConnectionStatus.RECONNECTING -> R.string.gateway_server_reconnecting
+    }
 
 internal val GatewayPhase.titleRes: Int
     get() = when (this) {

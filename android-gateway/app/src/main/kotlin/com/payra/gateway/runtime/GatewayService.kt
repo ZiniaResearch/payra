@@ -3,10 +3,13 @@ package com.payra.gateway.runtime
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.ServiceCompat
+import com.payra.gateway.network.GatewayServer
+import com.payra.gateway.network.GatewaySocket
 import com.payra.gateway.permissions.hasRequiredGatewayPermissions
 import com.payra.gateway.sms.ActiveSim
 import com.payra.gateway.sms.observeActiveSims
@@ -19,6 +22,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -29,6 +34,9 @@ class GatewayService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val settings by lazy { GatewaySettings(this) }
     private val notification by lazy { GatewayNotification(this) }
+    private val gatewaySocket by lazy {
+        GatewaySocket(checkNotNull(getSystemService(ConnectivityManager::class.java)))
+    }
 
     private var monitorJob: Job? = null
     private var pauseJob: Job? = null
@@ -88,26 +96,67 @@ class GatewayService : Service() {
         return false
     }
 
-    private suspend fun monitorGateway(manualStart: Boolean) {
+    private suspend fun monitorGateway(manualStart: Boolean) = coroutineScope {
         val initial = settings.configuration.first()
-        if (!hasRequiredGatewayPermissions(this)) {
+        if (!hasRequiredGatewayPermissions(this@GatewayService)) {
             stopGateway(GatewayPhase.PERMISSION_REQUIRED)
-            return
+            return@coroutineScope
         }
-        if (initial.sendingSim == null || (!manualStart && initial.runPreference !is GatewayRunPreference.Enabled)) {
+        if (!initial.canStart || (!manualStart && initial.runPreference !is GatewayRunPreference.Enabled)) {
             stopGateway()
-            return
+            return@coroutineScope
         }
         if (manualStart) settings.enableGateway()
 
-        settings.configuration.distinctUntilChanged().collectLatest { configuration ->
-            val sim = configuration.sendingSim
-            if (configuration.runPreference is GatewayRunPreference.Enabled && sim != null) {
-                monitorSim(sim.subscriptionId)
-            } else {
+        var observedSimId: Int? = null
+        var observedServer: GatewayServer? = null
+        var simJob: Job? = null
+        var socketJob: Job? = null
+        settings.configuration.collect { configuration ->
+            val simId = configuration.sendingSim?.subscriptionId
+            val server = configuration.server
+            if (configuration.runPreference !is GatewayRunPreference.Enabled || simId == null || server == null) {
                 stopGateway()
+                return@collect
+            }
+
+            // A SIM change only restarts the SIM watcher. URL or heartbeat changes restart the socket.
+            if (simId != observedSimId) {
+                simJob?.cancelAndJoin()
+                observedSimId = simId
+                simJob = launch { monitorSim(simId) }
+            }
+            if (server != observedServer) {
+                socketJob?.cancelAndJoin()
+                observedServer = server
+                GatewayRuntime.publish(GatewayRuntime.state.value.copy(lastWorkNoticeAtMillis = null))
+                socketJob = launch { monitorServer(server) }
             }
         }
+    }
+
+    private suspend fun monitorServer(server: GatewayServer) {
+        gatewaySocket.monitor(
+            server = server,
+            beforeConnect = {
+                val allowed = hasRequiredGatewayPermissions(this)
+                if (!allowed) stopGateway(GatewayPhase.PERMISSION_REQUIRED)
+                allowed
+            },
+            onStatus = { status ->
+                val previous = GatewayRuntime.state.value
+                if (previous.connectionStatus != status) {
+                    val next = previous.copy(connectionStatus = status)
+                    GatewayRuntime.publish(next)
+                    notification.update(next)
+                }
+            },
+            onWorkAvailable = {
+                GatewayRuntime.publish(
+                    GatewayRuntime.state.value.copy(lastWorkNoticeAtMillis = System.currentTimeMillis()),
+                )
+            },
+        )
     }
 
     private suspend fun monitorSim(subscriptionId: Int) {
@@ -144,8 +193,9 @@ class GatewayService : Service() {
 
     private fun showPhase(phase: GatewayPhase, subscriptionId: Int, activeSim: ActiveSim? = null) {
         val previous = GatewayRuntime.state.value
-        GatewayRuntime.publish(previous.copy(phase = phase, subscriptionId = subscriptionId, activeSim = activeSim))
-        if (previous.phase != phase) notification.update(phase)
+        val next = previous.copy(phase = phase, subscriptionId = subscriptionId, activeSim = activeSim)
+        GatewayRuntime.publish(next)
+        if (previous.phase != phase) notification.update(next)
     }
 
     private fun pauseGateway() {

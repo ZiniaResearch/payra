@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.annotation.MainThread
+import com.payra.gateway.network.GatewayConnectionStatus
 import com.payra.gateway.permissions.hasRequiredGatewayPermissions
 import com.payra.gateway.sms.ActiveSim
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +27,8 @@ internal data class GatewayRuntimeState(
     val phase: GatewayPhase = GatewayPhase.STOPPED,
     val subscriptionId: Int? = null,
     val activeSim: ActiveSim? = null,
+    val connectionStatus: GatewayConnectionStatus = GatewayConnectionStatus.DISCONNECTED,
+    val lastWorkNoticeAtMillis: Long? = null,
     val isPausing: Boolean = false,
     val pauseFailed: Boolean = false,
 )
@@ -70,8 +73,8 @@ internal object GatewayRuntime {
 
     @MainThread
     fun refreshNotification(context: Context) {
-        val phase = current.value.phase
-        if (phase.isMonitoring) GatewayNotification(context).update(phase)
+        val state = current.value
+        if (state.phase.isMonitoring) GatewayNotification(context).update(state)
     }
 
     @MainThread
