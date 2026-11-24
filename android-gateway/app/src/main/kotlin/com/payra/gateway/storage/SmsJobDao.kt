@@ -20,19 +20,14 @@ internal abstract class SmsJobDao {
         !hasOutstandingJob() && insert(job) != -1L
 
     @Query("""
-        SELECT
-            (SELECT COUNT(*) FROM sms_jobs WHERE serverUrl = :serverUrl AND state = 'QUEUED') AS queuedCount,
-            EXISTS (SELECT 1 FROM sms_jobs WHERE serverUrl = :serverUrl AND state = 'SENDING') AS isSending,
-            outcome.state AS outcome_state,
-            outcome.partCount AS outcome_partCount,
-            outcome.errorCode AS outcome_errorCode
+        SELECT job.serverUrl, job.state
         FROM (SELECT 1)
-        LEFT JOIN sms_jobs AS outcome ON outcome.rowid = (
-            SELECT rowid FROM sms_jobs WHERE serverUrl = :serverUrl AND finishedAtMillis IS NOT NULL
-            ORDER BY finishedAtMillis DESC, rowid DESC LIMIT 1
+        LEFT JOIN sms_jobs AS job ON job.rowid = (
+            SELECT rowid FROM sms_jobs
+            ORDER BY CASE state WHEN 'SENDING' THEN 0 WHEN 'QUEUED' THEN 2 ELSE 1 END, rowid LIMIT 1
         )
     """)
-    abstract fun observeOverview(serverUrl: String): Flow<SmsQueueOverview>
+    abstract fun observeCurrentJob(): Flow<CurrentSmsJob>
 
     // An existing send stays first even if the operator changes servers.
     @Query("""

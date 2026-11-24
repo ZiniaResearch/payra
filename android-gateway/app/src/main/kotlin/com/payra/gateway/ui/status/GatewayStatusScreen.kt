@@ -6,7 +6,6 @@ import android.text.format.DateFormat
 import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -22,9 +21,9 @@ import com.payra.gateway.runtime.GatewayPhase
 import com.payra.gateway.runtime.GatewayRuntime
 import com.payra.gateway.sms.ActiveSim
 import com.payra.gateway.sms.readActiveSims
+import com.payra.gateway.storage.CurrentSmsJob
 import com.payra.gateway.storage.GatewayDatabase
 import com.payra.gateway.storage.SendingSim
-import com.payra.gateway.storage.SmsQueueOverview
 import com.payra.gateway.ui.permissions.openGatewayAppSettings
 import com.payra.gateway.ui.permissions.rememberGatewayPermissionRequest
 import com.payra.gateway.ui.rememberSimServiceStates
@@ -117,7 +116,8 @@ internal fun GatewayStatusScreen(
             serverAddress = serverAddress,
             connectionStatus = runtime.connectionStatus,
             lastWorkNotice = runtime.lastWorkNoticeAtMillis?.let { DateFormat.getTimeFormat(context).format(Date(it)) },
-            smsQueue = smsQueueOverview(serverAddress),
+            currentJob = currentSmsJob(),
+            reportError = runtime.reportError,
             isPaused = isPaused,
             isPausing = runtime.isPausing,
             pauseFailed = runtime.pauseFailed,
@@ -134,19 +134,15 @@ internal fun GatewayStatusScreen(
 }
 
 @Composable
-private fun smsQueueOverview(serverAddress: String?): SmsQueueOverview? {
-    if (serverAddress == null) return null
-
+private fun currentSmsJob(): CurrentSmsJob? {
     val context = LocalContext.current.applicationContext
-    return key(context, serverAddress) {
-        val overview = remember {
-            val stored: Flow<SmsQueueOverview?> = GatewayDatabase.getInstance(context).smsJobs().observeOverview(serverAddress)
-            stored.catch { error ->
-                if (error !is SQLiteException) throw error
-                Log.w("GatewaySms", "Could not read the SMS queue (${error.javaClass.simpleName})")
-                emit(null)
-            }
+    val jobs = remember(context) {
+        val stored: Flow<CurrentSmsJob?> = GatewayDatabase.getInstance(context).smsJobs().observeCurrentJob()
+        stored.catch { error ->
+            if (error !is SQLiteException) throw error
+            Log.w("GatewaySms", "Could not read the current job (${error.javaClass.simpleName})")
+            emit(null)
         }
-        overview.collectAsStateWithLifecycle(initialValue = null).value
     }
+    return jobs.collectAsStateWithLifecycle(initialValue = null).value
 }

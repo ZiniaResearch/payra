@@ -32,7 +32,7 @@ import com.payra.gateway.R
 import com.payra.gateway.network.GatewayConnectionStatus
 import com.payra.gateway.runtime.GatewayPhase
 import com.payra.gateway.runtime.titleRes
-import com.payra.gateway.storage.SmsQueueOverview
+import com.payra.gateway.storage.CurrentSmsJob
 import com.payra.gateway.ui.permissions.PermissionAccess
 
 internal data class GatewayStatusUiState(
@@ -45,7 +45,8 @@ internal data class GatewayStatusUiState(
     val serverAddress: String?,
     val connectionStatus: GatewayConnectionStatus,
     val lastWorkNotice: String?,
-    val smsQueue: SmsQueueOverview?,
+    val currentJob: CurrentSmsJob?,
+    val reportError: String?,
     val isPaused: Boolean,
     val isPausing: Boolean,
     val pauseFailed: Boolean,
@@ -114,8 +115,13 @@ internal fun GatewayStatusContent(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            state.smsQueue?.let { queue ->
-                SmsQueueCard(queue = queue, modifier = Modifier.fillMaxWidth())
+            state.currentJob?.let { job ->
+                CurrentSmsJobCard(
+                    job = job,
+                    serverAddress = state.serverAddress,
+                    reportError = state.reportError,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
 
             Card(modifier = Modifier.fillMaxWidth()) {

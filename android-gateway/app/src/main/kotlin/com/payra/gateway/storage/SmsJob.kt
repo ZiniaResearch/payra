@@ -1,7 +1,6 @@
 package com.payra.gateway.storage
 
 import androidx.room.ColumnInfo
-import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.Index
 
@@ -43,16 +42,9 @@ internal data class SmsJob(
     val reportFrozen: Boolean = false,
 )
 
-internal data class SmsJobOutcome(
-    val state: SmsJobState,
-    val partCount: Int?,
-    val errorCode: Int?,
-)
-
-internal data class SmsQueueOverview(
-    val queuedCount: Int,
-    val isSending: Boolean,
-    @Embedded(prefix = "outcome_") val latestOutcome: SmsJobOutcome?,
+internal data class CurrentSmsJob(
+    val serverUrl: String?,
+    val state: SmsJobState?,
 )
 
 internal data class SmsReportKey(val id: String, val attemptNumber: Int)
