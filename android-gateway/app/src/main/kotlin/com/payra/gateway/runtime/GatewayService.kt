@@ -8,12 +8,15 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.ServiceCompat
+import com.payra.gateway.network.GatewayApi
+import com.payra.gateway.network.GatewayConnectionStatus
 import com.payra.gateway.network.GatewayServer
 import com.payra.gateway.network.GatewaySocket
 import com.payra.gateway.permissions.hasRequiredGatewayPermissions
 import com.payra.gateway.sms.ActiveSim
 import com.payra.gateway.sms.observeActiveSims
 import com.payra.gateway.sms.observeSimService
+import com.payra.gateway.storage.GatewayDatabase
 import com.payra.gateway.storage.GatewayRunPreference
 import com.payra.gateway.storage.GatewaySettings
 import java.io.IOException
@@ -23,19 +26,27 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
 
 class GatewayService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val settings by lazy { GatewaySettings(this) }
     private val notification by lazy { GatewayNotification(this) }
+    private val networkClient by lazy { OkHttpClient.Builder().followRedirects(false).build() }
     private val gatewaySocket by lazy {
-        GatewaySocket(checkNotNull(getSystemService(ConnectivityManager::class.java)))
+        GatewaySocket(checkNotNull(getSystemService(ConnectivityManager::class.java)), networkClient)
+    }
+    private val jobClaimer by lazy {
+        JobClaimer(GatewayApi(networkClient), GatewayDatabase.getInstance(this).smsJobs())
     }
 
     private var monitorJob: Job? = null
@@ -129,17 +140,38 @@ class GatewayService : Service() {
             if (server != observedServer) {
                 socketJob?.cancelAndJoin()
                 observedServer = server
-                GatewayRuntime.publish(GatewayRuntime.state.value.copy(lastWorkNoticeAtMillis = null))
+                GatewayRuntime.publish(
+                    GatewayRuntime.state.value.copy(
+                        connectionStatus = GatewayConnectionStatus.DISCONNECTED,
+                        lastWorkNoticeAtMillis = null,
+                    ),
+                )
                 socketJob = launch { monitorServer(server) }
             }
         }
     }
 
-    private suspend fun monitorServer(server: GatewayServer) {
+    private suspend fun monitorServer(server: GatewayServer) = coroutineScope {
+        // One claim runs at a time, with room for one more check.
+        val claimRequests = Channel<Unit>(Channel.CONFLATED)
+        launch {
+            claimRequests.consumeEach {
+                jobClaimer.claim(server) {
+                    isReadyToClaim(GatewayRuntime.state.value) &&
+                        hasRequiredGatewayPermissions(this@GatewayService)
+                }
+            }
+        }
+        launch {
+            GatewayRuntime.state.map(::isReadyToClaim).distinctUntilChanged().collect { ready ->
+                if (ready) claimRequests.trySend(Unit)
+            }
+        }
+
         gatewaySocket.monitor(
             server = server,
             beforeConnect = {
-                val allowed = hasRequiredGatewayPermissions(this)
+                val allowed = hasRequiredGatewayPermissions(this@GatewayService)
                 if (!allowed) stopGateway(GatewayPhase.PERMISSION_REQUIRED)
                 allowed
             },
@@ -155,9 +187,15 @@ class GatewayService : Service() {
                 GatewayRuntime.publish(
                     GatewayRuntime.state.value.copy(lastWorkNoticeAtMillis = System.currentTimeMillis()),
                 )
+                claimRequests.trySend(Unit)
             },
         )
     }
+
+    private fun isReadyToClaim(state: GatewayRuntimeState): Boolean =
+        state.phase == GatewayPhase.RUNNING &&
+            state.connectionStatus == GatewayConnectionStatus.CONNECTED &&
+            !state.isPausing
 
     private suspend fun monitorSim(subscriptionId: Int) {
         showPhase(GatewayPhase.CHECKING_SIM, subscriptionId)

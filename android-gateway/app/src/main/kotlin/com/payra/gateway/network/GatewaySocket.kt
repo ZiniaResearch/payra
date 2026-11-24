@@ -28,9 +28,10 @@ internal enum class GatewayConnectionStatus {
     RECONNECTING,
 }
 
-internal class GatewaySocket(private val connectivity: ConnectivityManager) {
-    private val client = OkHttpClient.Builder().followRedirects(false).build()
-
+internal class GatewaySocket(
+    private val connectivity: ConnectivityManager,
+    private val client: OkHttpClient,
+) {
     // The service owns this call. Cancelling it also cancels the socket and any retry delay.
     suspend fun monitor(
         server: GatewayServer,
