@@ -23,6 +23,7 @@ android {
         versionName = "0.1.0"
     }
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 }
@@ -33,4 +34,5 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.datastore:datastore-preferences:1.3.0")
+    implementation("com.squareup.okhttp3:okhttp:5.5.1")
 }
