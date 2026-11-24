@@ -3,6 +3,7 @@ package com.payra.gateway.runtime
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.database.sqlite.SQLiteException
 import android.net.ConnectivityManager
 import android.os.Build
 import android.os.IBinder
@@ -14,8 +15,10 @@ import com.payra.gateway.network.GatewayServer
 import com.payra.gateway.network.GatewaySocket
 import com.payra.gateway.permissions.hasRequiredGatewayPermissions
 import com.payra.gateway.sms.ActiveSim
+import com.payra.gateway.sms.SmsSender
 import com.payra.gateway.sms.observeActiveSims
 import com.payra.gateway.sms.observeSimService
+import com.payra.gateway.storage.GatewayConfiguration
 import com.payra.gateway.storage.GatewayDatabase
 import com.payra.gateway.storage.GatewayRunPreference
 import com.payra.gateway.storage.GatewaySettings
@@ -29,11 +32,14 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 
@@ -45,9 +51,11 @@ class GatewayService : Service() {
     private val gatewaySocket by lazy {
         GatewaySocket(checkNotNull(getSystemService(ConnectivityManager::class.java)), networkClient)
     }
+    private val smsJobs by lazy { GatewayDatabase.getInstance(this).smsJobs() }
     private val jobClaimer by lazy {
-        JobClaimer(GatewayApi(networkClient), GatewayDatabase.getInstance(this).smsJobs())
+        JobClaimer(GatewayApi(networkClient), smsJobs)
     }
+    private val smsSendQueue by lazy { SmsSendQueue(smsJobs, SmsSender(this)) }
 
     private var monitorJob: Job? = null
     private var pauseJob: Job? = null
@@ -123,7 +131,9 @@ class GatewayService : Service() {
         var observedServer: GatewayServer? = null
         var simJob: Job? = null
         var socketJob: Job? = null
-        settings.configuration.collect { configuration ->
+        var sendingJob: Job? = null
+        val configurations = settings.configuration.stateIn(this)
+        configurations.collect { configuration ->
             val simId = configuration.sendingSim?.subscriptionId
             val server = configuration.server
             if (configuration.runPreference !is GatewayRunPreference.Enabled || simId == null || server == null) {
@@ -131,11 +141,15 @@ class GatewayService : Service() {
                 return@collect
             }
 
-            // A SIM change only restarts the SIM watcher. URL or heartbeat changes restart the socket.
             if (simId != observedSimId) {
                 simJob?.cancelAndJoin()
                 observedSimId = simId
                 simJob = launch { monitorSim(simId) }
+            }
+            // Heartbeat and SIM changes can take effect while an SMS result is pending.
+            if (server.baseUrl != observedServer?.baseUrl) {
+                sendingJob?.cancelAndJoin()
+                sendingJob = launch { monitorSending(server.baseUrl.toString(), configurations) }
             }
             if (server != observedServer) {
                 socketJob?.cancelAndJoin()
@@ -149,6 +163,42 @@ class GatewayService : Service() {
                 socketJob = launch { monitorServer(server) }
             }
         }
+    }
+
+    private suspend fun monitorSending(
+        serverUrl: String,
+        configurations: StateFlow<GatewayConfiguration>,
+    ) {
+        val options = configurations.combine(GatewayRuntime.state) { configuration, state ->
+            sendingOptions(serverUrl, configuration, state)
+        }.distinctUntilChanged()
+
+        try {
+            smsSendQueue.monitor(serverUrl, options) {
+                if (hasRequiredGatewayPermissions(this)) {
+                    sendingOptions(serverUrl, configurations.value, GatewayRuntime.state.value)
+                } else {
+                    null
+                }
+            }
+        } catch (error: SQLiteException) {
+            Log.w(TAG, "Could not process the SMS queue (${error.javaClass.simpleName})")
+        }
+    }
+
+    private fun sendingOptions(
+        serverUrl: String,
+        configuration: GatewayConfiguration,
+        state: GatewayRuntimeState,
+    ): SmsSendOptions? {
+        val simId = configuration.sendingSim?.subscriptionId ?: return null
+        if (configuration.runPreference !is GatewayRunPreference.Enabled ||
+            configuration.serverBaseUrl?.toString() != serverUrl ||
+            state.phase != GatewayPhase.RUNNING || state.isPausing || state.subscriptionId != simId
+        ) {
+            return null
+        }
+        return SmsSendOptions(simId, configuration.maxSmsParts)
     }
 
     private suspend fun monitorServer(server: GatewayServer) = coroutineScope {
