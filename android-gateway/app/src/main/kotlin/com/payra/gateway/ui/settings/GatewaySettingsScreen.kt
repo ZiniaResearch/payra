@@ -31,8 +31,10 @@ internal fun GatewaySettingsScreen(
     sendingSim: SendingSim,
     serverAddress: String?,
     appearance: GatewayAppearance,
+    maxSmsParts: Int,
     onChooseSim: () -> Unit,
     onConfigureServer: () -> Unit,
+    onConfigureSmsSending: () -> Unit,
     onChangeAppearance: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -50,6 +52,12 @@ internal fun GatewaySettingsScreen(
             },
         ) {
             Text(stringResource(R.string.gateway_server_connection))
+        }
+        ListItem(
+            onClick = onConfigureSmsSending,
+            supportingContent = { Text(stringResource(R.string.gateway_sms_parts_setting_summary, maxSmsParts)) },
+        ) {
+            Text(stringResource(R.string.gateway_sms_sending_settings))
         }
         ListItem(
             onClick = onChangeAppearance,

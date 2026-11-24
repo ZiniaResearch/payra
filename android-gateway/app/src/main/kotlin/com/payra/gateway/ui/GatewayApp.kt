@@ -18,6 +18,7 @@ import com.payra.gateway.storage.GatewayAppearance
 import com.payra.gateway.ui.settings.AppearanceSettingsScreen
 import com.payra.gateway.ui.settings.GatewaySettingsScreen
 import com.payra.gateway.ui.settings.ServerSettingsScreen
+import com.payra.gateway.ui.settings.SmsSendingSettingsScreen
 import com.payra.gateway.ui.setup.GatewaySetupScreen
 import com.payra.gateway.ui.status.GatewayStatusScreen
 import com.payra.gateway.ui.theme.GatewayTheme
@@ -66,8 +67,10 @@ private fun GatewayReadyScreen(state: GatewayScreenState.Ready, viewModel: Gatew
             sendingSim = sendingSim,
             serverAddress = serverAddress,
             appearance = configuration.appearance,
+            maxSmsParts = configuration.maxSmsParts,
             onChooseSim = { viewModel.openPage(GatewayPage.SENDING_SIM) },
             onConfigureServer = { viewModel.openPage(GatewayPage.SERVER) },
+            onConfigureSmsSending = { viewModel.openPage(GatewayPage.SMS_SENDING) },
             onChangeAppearance = { viewModel.openPage(GatewayPage.APPEARANCE) },
             onBack = { viewModel.openPage(GatewayPage.HOME) },
         )
@@ -94,6 +97,13 @@ private fun GatewayReadyScreen(state: GatewayScreenState.Ready, viewModel: Gatew
             isSaving = state.isSaving,
             saveFailed = state.saveFailed,
             onChange = viewModel::saveAppearance,
+            onBack = { viewModel.openPage(GatewayPage.SETTINGS) },
+        )
+        GatewayPage.SMS_SENDING -> SmsSendingSettingsScreen(
+            maxParts = configuration.maxSmsParts,
+            isSaving = state.isSaving,
+            saveFailed = state.saveFailed,
+            onSave = viewModel::saveMaxSmsParts,
             onBack = { viewModel.openPage(GatewayPage.SETTINGS) },
         )
     }

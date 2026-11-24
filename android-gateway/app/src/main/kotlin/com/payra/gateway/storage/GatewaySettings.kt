@@ -24,6 +24,9 @@ private val serverUrlKey = stringPreferencesKey("server_base_url")
 private val heartbeatKey = intPreferencesKey("server_heartbeat_seconds")
 private val serverSetupCompleteKey = booleanPreferencesKey("server_setup_complete")
 private val appearanceKey = stringPreferencesKey("appearance")
+private val maxSmsPartsKey = intPreferencesKey("max_sms_parts")
+internal const val DEFAULT_SMS_PARTS = 5
+internal const val MAX_SMS_PARTS = 255
 
 internal data class SendingSim(
     val subscriptionId: Int,
@@ -50,6 +53,7 @@ internal data class GatewayConfiguration(
     val heartbeat: HeartbeatInterval,
     val serverSetupComplete: Boolean,
     val appearance: GatewayAppearance,
+    val maxSmsParts: Int,
 ) {
     val server: GatewayServer?
         get() = serverBaseUrl?.let { GatewayServer(it, heartbeat) }
@@ -84,6 +88,7 @@ internal class GatewaySettings(context: Context) {
             heartbeat = heartbeat,
             serverSetupComplete = preferences[serverSetupCompleteKey] == true,
             appearance = appearance,
+            maxSmsParts = preferences[maxSmsPartsKey]?.takeIf { it in 1..MAX_SMS_PARTS } ?: DEFAULT_SMS_PARTS,
         )
     }
 
@@ -139,6 +144,11 @@ internal class GatewaySettings(context: Context) {
 
     suspend fun saveAppearance(appearance: GatewayAppearance): GatewayConfiguration =
         readConfiguration(store.edit { it[appearanceKey] = appearance.name })
+
+    suspend fun saveMaxSmsParts(maxParts: Int): GatewayConfiguration {
+        require(maxParts in 1..MAX_SMS_PARTS)
+        return readConfiguration(store.edit { it[maxSmsPartsKey] = maxParts })
+    }
 
     private fun readServerUrl(preferences: Preferences) =
         preferences[serverUrlKey]?.let { GatewayServer.parseBaseUrl(it) }

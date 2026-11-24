@@ -26,6 +26,7 @@ internal enum class GatewayPage {
     SETTINGS,
     SENDING_SIM,
     SERVER,
+    SMS_SENDING,
     APPEARANCE,
 }
 
@@ -87,6 +88,10 @@ internal class GatewayViewModel(application: Application) : AndroidViewModel(app
     fun skipServerSetup() = saveSettings { settings.skipServerSetup() }
 
     fun removeServer() = saveSettings { settings.removeServer() }
+
+    fun saveMaxSmsParts(maxParts: Int) = saveSettings(page = GatewayPage.SETTINGS) {
+        settings.saveMaxSmsParts(maxParts)
+    }
 
     fun saveAppearance(appearance: GatewayAppearance) = saveSettings(page = GatewayPage.APPEARANCE) {
         settings.saveAppearance(appearance)
