@@ -26,7 +26,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Operator-enabled SIM monitoring and server connection on a dedicated SMS gateway phone" />
+                android:value="Operator-enabled SIM monitoring, server connection, and SMS sending on a dedicated gateway phone" />
         </service>
 
         <receiver android:name=".runtime.GatewayBootReceiver" android:exported="false">
@@ -34,5 +34,7 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <receiver android:name=".sms.SmsResultReceiver" android:exported="false" />
     </application>
 </manifest>
