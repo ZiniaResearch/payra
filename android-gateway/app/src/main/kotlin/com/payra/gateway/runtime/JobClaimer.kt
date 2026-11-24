@@ -1,6 +1,5 @@
 package com.payra.gateway.runtime
 
-import android.database.sqlite.SQLiteException
 import android.util.Log
 import com.payra.gateway.network.ClaimResult
 import com.payra.gateway.network.GatewayApi
@@ -17,13 +16,13 @@ internal class JobClaimer(
 ) {
     suspend fun claim(server: GatewayServer, canClaim: () -> Boolean) {
         currentCoroutineContext().ensureActive()
-        if (!canClaim()) return
+        if (!canClaim() || jobs.hasOutstandingJob()) return
 
         var result = api.claimJob(server)
         if (result is ClaimResult.Failure && result.retryable) {
             Log.w(TAG, "Claim failed (${result.reason}). Will retry once if ready.")
             delay(2_000)
-            if (!canClaim()) return
+            if (!canClaim() || jobs.hasOutstandingJob()) return
             result = api.claimJob(server)
         }
 
@@ -38,18 +37,12 @@ internal class JobClaimer(
         val job = SmsJob(
             serverUrl = server.baseUrl.toString(),
             id = result.id,
+            attemptNumber = result.attemptNumber,
             recipient = result.recipient,
             message = result.message,
         )
-        try {
-            val rowId = jobs.insert(job)
-            if (rowId == -1L) {
-                Log.i(TAG, "Job ${job.id} already saved")
-            } else {
-                Log.i(TAG, "Saved job ${job.id}")
-            }
-        } catch (error: SQLiteException) {
-            Log.w(TAG, "Could not save job ${job.id} (${error.javaClass.simpleName})")
+        if (jobs.saveClaim(job)) {
+            Log.i(TAG, "Saved job ${job.id} attempt ${job.attemptNumber}")
         }
     }
 

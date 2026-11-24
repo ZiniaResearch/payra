@@ -1,6 +1,6 @@
 package com.payra.gateway.network
 
-import android.net.ConnectivityManager
+import android.net.Network
 import android.os.SystemClock
 import android.util.Log
 import java.util.concurrent.TimeUnit
@@ -28,13 +28,11 @@ internal enum class GatewayConnectionStatus {
     RECONNECTING,
 }
 
-internal class GatewaySocket(
-    private val connectivity: ConnectivityManager,
-    private val client: OkHttpClient,
-) {
+internal class GatewaySocket(private val client: OkHttpClient) {
     // The service owns this call. Cancelling it also cancels the socket and any retry delay.
     suspend fun monitor(
         server: GatewayServer,
+        networks: Flow<Network?>,
         beforeConnect: () -> Boolean,
         onStatus: (GatewayConnectionStatus) -> Unit,
         onWorkAvailable: () -> Unit,
@@ -45,7 +43,7 @@ internal class GatewaySocket(
         val request = Request.Builder().url(server.socketUrl).build()
         var attempted = false
 
-        observeDefaultNetwork(connectivity).collectLatest { network ->
+        networks.collectLatest { network ->
             if (network == null) {
                 onStatus(GatewayConnectionStatus.OFFLINE)
                 return@collectLatest

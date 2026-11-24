@@ -31,6 +31,7 @@ internal data class GatewayRuntimeState(
     val lastWorkNoticeAtMillis: Long? = null,
     val isPausing: Boolean = false,
     val pauseFailed: Boolean = false,
+    val reportError: String? = null,
 )
 
 internal object GatewayRuntime {

@@ -13,6 +13,7 @@ import com.payra.gateway.network.GatewayApi
 import com.payra.gateway.network.GatewayConnectionStatus
 import com.payra.gateway.network.GatewayServer
 import com.payra.gateway.network.GatewaySocket
+import com.payra.gateway.network.observeDefaultNetwork
 import com.payra.gateway.permissions.hasRequiredGatewayPermissions
 import com.payra.gateway.sms.ActiveSim
 import com.payra.gateway.sms.SmsSender
@@ -48,13 +49,11 @@ class GatewayService : Service() {
     private val settings by lazy { GatewaySettings(this) }
     private val notification by lazy { GatewayNotification(this) }
     private val networkClient by lazy { OkHttpClient.Builder().followRedirects(false).build() }
-    private val gatewaySocket by lazy {
-        GatewaySocket(checkNotNull(getSystemService(ConnectivityManager::class.java)), networkClient)
-    }
+    private val gatewaySocket by lazy { GatewaySocket(networkClient) }
+    private val gatewayApi by lazy { GatewayApi(networkClient) }
     private val smsJobs by lazy { GatewayDatabase.getInstance(this).smsJobs() }
-    private val jobClaimer by lazy {
-        JobClaimer(GatewayApi(networkClient), smsJobs)
-    }
+    private val jobClaimer by lazy { JobClaimer(gatewayApi, smsJobs) }
+    private val jobResultReporter by lazy { JobResultReporter(gatewayApi, smsJobs) }
     private val smsSendQueue by lazy { SmsSendQueue(smsJobs, SmsSender(this)) }
 
     private var monitorJob: Job? = null
@@ -158,6 +157,7 @@ class GatewayService : Service() {
                     GatewayRuntime.state.value.copy(
                         connectionStatus = GatewayConnectionStatus.DISCONNECTED,
                         lastWorkNoticeAtMillis = null,
+                        reportError = null,
                     ),
                 )
                 socketJob = launch { monitorServer(server) }
@@ -202,14 +202,34 @@ class GatewayService : Service() {
     }
 
     private suspend fun monitorServer(server: GatewayServer) = coroutineScope {
+        val connectivity = checkNotNull(getSystemService(ConnectivityManager::class.java))
+        val networks = observeDefaultNetwork(connectivity).stateIn(this)
         // One claim runs at a time, with room for one more check.
         val claimRequests = Channel<Unit>(Channel.CONFLATED)
+        val reconnected = Channel<Unit>(Channel.CONFLATED)
         launch {
             claimRequests.consumeEach {
-                jobClaimer.claim(server) {
-                    isReadyToClaim(GatewayRuntime.state.value) &&
-                        hasRequiredGatewayPermissions(this@GatewayService)
+                try {
+                    jobClaimer.claim(server) {
+                        isReadyToClaim(GatewayRuntime.state.value) &&
+                            hasRequiredGatewayPermissions(this@GatewayService)
+                    }
+                } catch (error: SQLiteException) {
+                    Log.w(TAG, "Could not read or save a job claim (${error.javaClass.simpleName})")
                 }
+            }
+        }
+        launch {
+            try {
+                jobResultReporter.monitor(
+                    server = server,
+                    networks = networks,
+                    reconnected = reconnected,
+                    onRejected = { error -> GatewayRuntime.publish(GatewayRuntime.state.value.copy(reportError = error)) },
+                    onAcknowledged = { claimRequests.trySend(Unit) },
+                )
+            } catch (error: SQLiteException) {
+                Log.w(TAG, "Could not access the saved report (${error.javaClass.simpleName})")
             }
         }
         launch {
@@ -220,6 +240,7 @@ class GatewayService : Service() {
 
         gatewaySocket.monitor(
             server = server,
+            networks = networks,
             beforeConnect = {
                 val allowed = hasRequiredGatewayPermissions(this@GatewayService)
                 if (!allowed) stopGateway(GatewayPhase.PERMISSION_REQUIRED)
@@ -231,6 +252,7 @@ class GatewayService : Service() {
                     val next = previous.copy(connectionStatus = status)
                     GatewayRuntime.publish(next)
                     notification.update(next)
+                    if (status == GatewayConnectionStatus.CONNECTED) reconnected.trySend(Unit)
                 }
             },
             onWorkAvailable = {

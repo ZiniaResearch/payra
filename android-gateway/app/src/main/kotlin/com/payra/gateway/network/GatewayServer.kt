@@ -24,6 +24,12 @@ internal data class GatewayServer(
             .addPathSegments("jobs/claim")
             .build()
 
+    fun resultUrl(jobId: String): HttpUrl = baseUrl.newBuilder()
+        .addPathSegment("jobs")
+        .addPathSegment(jobId)
+        .addPathSegment("result")
+        .build()
+
     companion object {
         fun parseBaseUrl(input: String): HttpUrl? {
             val address = input.trim()

@@ -10,7 +10,14 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 internal abstract class SmsJobDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    abstract suspend fun insert(job: SmsJob): Long
+    protected abstract suspend fun insert(job: SmsJob): Long
+
+    @Query("SELECT EXISTS (SELECT 1 FROM sms_jobs)")
+    abstract suspend fun hasOutstandingJob(): Boolean
+
+    @Transaction
+    open suspend fun saveClaim(job: SmsJob): Boolean =
+        !hasOutstandingJob() && insert(job) != -1L
 
     @Query("""
         SELECT
@@ -31,7 +38,9 @@ internal abstract class SmsJobDao {
     @Query("""
         SELECT * FROM sms_jobs WHERE rowid = COALESCE(
             (SELECT rowid FROM sms_jobs WHERE state = 'SENDING' LIMIT 1),
-            (SELECT rowid FROM sms_jobs WHERE serverUrl = :serverUrl AND state = 'QUEUED' ORDER BY rowid LIMIT 1)
+            (SELECT rowid FROM sms_jobs WHERE serverUrl = :serverUrl AND state = 'QUEUED'
+                AND NOT EXISTS (SELECT 1 FROM sms_jobs WHERE serverUrl = :serverUrl AND finishedAtMillis IS NOT NULL)
+                ORDER BY rowid LIMIT 1)
         )
     """)
     abstract fun observeNextForSending(serverUrl: String): Flow<SmsJob?>
