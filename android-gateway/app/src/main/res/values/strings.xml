@@ -83,6 +83,7 @@
 <string name="gateway_server_offline">Waiting for a network</string>
 <string name="gateway_server_reconnecting">Reconnecting to server…</string>
 <string name="gateway_last_work_notice">Last work notice at %1$s</string>
+<string name="gateway_saved_job_count">Saved jobs · %1$d</string>
 <string name="gateway_heartbeat_interval">Heartbeat interval · %1$s</string>
 <string name="gateway_heartbeat_30">30 seconds</string>
 <string name="gateway_heartbeat_60">1 minute</string>

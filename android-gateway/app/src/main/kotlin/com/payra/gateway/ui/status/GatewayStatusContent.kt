@@ -42,6 +42,7 @@ internal data class GatewayStatusUiState(
     val serverAddress: String?,
     val connectionStatus: GatewayConnectionStatus,
     val lastWorkNotice: String?,
+    val savedJobCount: Int?,
     val isPaused: Boolean,
     val isPausing: Boolean,
     val pauseFailed: Boolean,
@@ -106,6 +107,7 @@ internal fun GatewayStatusContent(
                 serverAddress = state.serverAddress,
                 status = state.connectionStatus,
                 lastWorkNotice = state.lastWorkNotice,
+                savedJobCount = state.savedJobCount,
                 onConfigureServer = onConfigureServer,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -208,6 +210,7 @@ private fun ServerConnectionCard(
     serverAddress: String?,
     status: GatewayConnectionStatus,
     lastWorkNotice: String?,
+    savedJobCount: Int?,
     onConfigureServer: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -229,6 +232,13 @@ private fun ServerConnectionCard(
                 }
             } else {
                 Text(serverAddress, style = MaterialTheme.typography.bodyMedium)
+                if (savedJobCount != null) {
+                    Text(
+                        text = stringResource(R.string.gateway_saved_job_count, savedJobCount),
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
                 if (lastWorkNotice != null) {
                     Text(
                         text = stringResource(R.string.gateway_last_work_notice, lastWorkNotice),

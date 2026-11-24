@@ -1,9 +1,12 @@
 package com.payra.gateway.ui.status
 
+import android.database.sqlite.SQLiteException
 import android.os.Build
 import android.text.format.DateFormat
+import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -19,6 +22,7 @@ import com.payra.gateway.runtime.GatewayPhase
 import com.payra.gateway.runtime.GatewayRuntime
 import com.payra.gateway.sms.ActiveSim
 import com.payra.gateway.sms.readActiveSims
+import com.payra.gateway.storage.GatewayDatabase
 import com.payra.gateway.storage.SendingSim
 import com.payra.gateway.ui.permissions.openGatewayAppSettings
 import com.payra.gateway.ui.permissions.rememberGatewayPermissionRequest
@@ -26,6 +30,7 @@ import com.payra.gateway.ui.rememberSimServiceStates
 import com.payra.gateway.ui.simLabel
 import java.util.Date
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 
 @Composable
 internal fun GatewayStatusScreen(
@@ -111,6 +116,7 @@ internal fun GatewayStatusScreen(
             serverAddress = serverAddress,
             connectionStatus = runtime.connectionStatus,
             lastWorkNotice = runtime.lastWorkNoticeAtMillis?.let { DateFormat.getTimeFormat(context).format(Date(it)) },
+            savedJobCount = savedJobCount(serverAddress),
             isPaused = isPaused,
             isPausing = runtime.isPausing,
             pauseFailed = runtime.pauseFailed,
@@ -124,4 +130,22 @@ internal fun GatewayStatusScreen(
         onStart = { if (serverAddress != null) GatewayRuntime.start(context) },
         onPause = { GatewayRuntime.pause(context) },
     )
+}
+
+@Composable
+private fun savedJobCount(serverAddress: String?): Int? {
+    if (serverAddress == null) return null
+
+    val context = LocalContext.current.applicationContext
+    return key(context, serverAddress) {
+        val counts = remember {
+            val storedCounts: Flow<Int?> = GatewayDatabase.getInstance(context).smsJobs().observeCount(serverAddress)
+            storedCounts.catch { error ->
+                if (error !is SQLiteException) throw error
+                Log.w("GatewayClaims", "Could not read saved job count (${error.javaClass.simpleName})")
+                emit(null)
+            }
+        }
+        counts.collectAsStateWithLifecycle(initialValue = null).value
+    }
 }
