@@ -100,7 +100,11 @@ export function parseChipDate(text: string): CalendarDate | null {
 }
 
 export function DayCell(
-	props: CalendarCellRenderProps & { isRange: boolean; showToday?: boolean },
+	props: CalendarCellRenderProps & {
+		isRange: boolean;
+		showToday?: boolean;
+		unavailableReason?: string;
+	},
 ) {
 	const { locale } = useLocale();
 	const {
@@ -117,6 +121,7 @@ export function DayCell(
 		isOutsideMonth,
 		isRange,
 		showToday = false,
+		unavailableReason,
 	} = props;
 
 	if (isOutsideMonth) {
@@ -152,7 +157,13 @@ export function DayCell(
 	// square in sync with the fade instead of snapping to square immediately
 	// while the color is still visible.
 	return (
-		<div className="relative size-8">
+		<div
+			className={cx(
+				"relative size-8",
+				isDisabled || isUnavailable ? "cursor-not-allowed" : "cursor-pointer",
+			)}
+			data-unavailable-reason={unavailableReason}
+		>
 			<span
 				aria-hidden
 				className={cx(
@@ -219,6 +230,7 @@ export function MonthPanel({
 	bare = false,
 	hideHeader = false,
 	showToday = false,
+	getDisabledDateReason,
 }: {
 	offset: number;
 	showPrev?: boolean;
@@ -234,6 +246,7 @@ export function MonthPanel({
 	hideHeader?: boolean;
 	/** Mark today with a dot under its date (the standalone Calendar does). */
 	showToday?: boolean;
+	getDisabledDateReason?: (date: CalendarDate) => string;
 }) {
 	const { locale } = useLocale();
 	// Works inside either a RangeCalendar (DateRangePicker) or a plain Calendar
@@ -266,7 +279,7 @@ export function MonthPanel({
 			className={
 				bare
 					? "w-[296px] shrink-0"
-					: "w-[326px] shrink-0 rounded-2xl bg-background-primary-default p-[15px] shadow-xs"
+					: "w-full shrink-0 rounded-2xl bg-background-primary-default p-2 shadow-xs sm:w-[326px] sm:p-[15px]"
 			}
 		>
 			<div className="flex flex-col gap-5">
@@ -300,8 +313,7 @@ export function MonthPanel({
 				<CalendarGrid
 					offset={{ months: offset }}
 					weekdayStyle={latinWeekdays ? "short" : "narrow"}
-					className="-m-3 self-start border-separate outline-none"
-					style={{ borderSpacing: "12px 12px" }}
+					className="-m-1 self-start border-separate border-spacing-1 outline-none sm:-m-3 sm:border-spacing-3"
 				>
 					<CalendarGridHeader>
 						{(day) => (
@@ -318,6 +330,11 @@ export function MonthPanel({
 										{...cellProps}
 										isRange={isRange}
 										showToday={showToday}
+										unavailableReason={
+											cellProps.isDisabled
+												? getDisabledDateReason?.(date)
+												: undefined
+										}
 									/>
 								)}
 							</CalendarCell>
