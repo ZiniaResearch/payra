@@ -175,6 +175,8 @@ const inputStyles = sortCx({
 	icon: "size-5 shrink-0",
 });
 
+export const inputElementClassName = inputStyles.input;
+
 /** The field shell's state for a render-prop className. */
 export interface InputFieldState {
 	isFocusWithin: boolean;
