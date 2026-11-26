@@ -1,8 +1,10 @@
 import { type SubmitEvent, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/base/buttons/button";
 import { Input } from "@/components/base/input/input";
+import { cx } from "@/utils/cx";
 
 interface ScheduleRecipientEditorProps {
+	mode: "add" | "edit";
 	name?: string;
 	phone: string;
 	onSave: (name: string, phone: string) => string | undefined;
@@ -10,6 +12,7 @@ interface ScheduleRecipientEditorProps {
 }
 
 export function ScheduleRecipientEditor({
+	mode,
 	name,
 	phone,
 	onSave,
@@ -19,6 +22,7 @@ export function ScheduleRecipientEditor({
 	const [draftPhone, setDraftPhone] = useState(phone);
 	const [phoneError, setPhoneError] = useState<string>();
 	const nameInput = useRef<HTMLInputElement>(null);
+	const isAdding = mode === "add";
 
 	useEffect(() => {
 		// The list restores focus when the edit button is replaced by this form.
@@ -34,7 +38,10 @@ export function ScheduleRecipientEditor({
 
 	return (
 		<form
-			className="flex min-w-0 items-start gap-1.5 sm:gap-2"
+			className={cx(
+				"flex min-w-0 items-start gap-1.5 sm:gap-2",
+				isAdding && "flex-wrap",
+			)}
 			onSubmit={save}
 			onKeyDown={(event) => {
 				if (event.key !== "Escape") return;
@@ -44,17 +51,15 @@ export function ScheduleRecipientEditor({
 		>
 			<Input
 				ref={nameInput}
-				aria-label="Name"
-				placeholder="Name"
+				placeholder={isAdding ? "Name (optional)" : "Name"}
 				inputDir="auto"
 				size="small"
-				className="min-w-16 max-w-52 flex-1"
+				className={cx("max-w-52 flex-1", isAdding ? "min-w-28" : "min-w-16")}
 				fieldClassName="h-9"
 				value={draftName}
 				onChange={setDraftName}
 			/>
 			<Input
-				aria-label="Phone number"
 				placeholder="Phone number"
 				type="tel"
 				size="small"

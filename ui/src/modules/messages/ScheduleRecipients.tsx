@@ -193,7 +193,9 @@ function RecipientRow({
 
 export function ScheduleRecipients() {
 	const [recipients, setRecipients] = useState(sampleRecipients);
-	const [selectedRecipients, setSelectedRecipients] = useState(new Set<Key>());
+	const [selectedRecipients, setSelectedRecipients] = useState(
+		() => new Set<Key>(),
+	);
 	const [editingId, setEditingId] = useState<Key | null>(null);
 	const [query, setQuery] = useState("");
 	const [requestedPage, setPage] = useState(1);
@@ -234,22 +236,25 @@ export function ScheduleRecipients() {
 		setEditingId(null);
 	}
 
+	function openNewRecipient() {
+		setPage(totalPages);
+		setEditingId(ADD_RECIPIENT_KEY);
+	}
+
+	function resetSearchAndFocus() {
+		changeQuery("");
+		inputRef.current?.focus();
+	}
+
 	function changeSelection(selection: Selection) {
 		if (selection === "all") return;
-		if (isNewPhone && selection.has(ADD_RECIPIENT_KEY)) {
-			const id = nextRecipientId.current++;
-			setRecipients((current) => [...current, { id, phone: phoneQuery }]);
-			setSelectedRecipients(
-				new Set(
-					[...selection].map((key) => (key === ADD_RECIPIENT_KEY ? id : key)),
-				),
-			);
-		} else {
-			setSelectedRecipients(selection);
+		if (selection.has(ADD_RECIPIENT_KEY)) {
+			if (isNewPhone) openNewRecipient();
+			return;
 		}
+		setSelectedRecipients(selection);
 		if (query && selection.size > selectedRecipients.size) {
-			changeQuery("");
-			inputRef.current?.focus();
+			resetSearchAndFocus();
 		}
 	}
 
@@ -286,12 +291,21 @@ export function ScheduleRecipients() {
 			return "This number is already saved.";
 		}
 
+		const isNew = id === ADD_RECIPIENT_KEY;
+		const saved = {
+			id: isNew ? nextRecipientId.current++ : id,
+			name: name.trim() || undefined,
+			phone: normalizedPhone,
+		};
+
+		if (isNew) {
+			setRecipients((current) => [...current, saved]);
+			setSelectedRecipients((current) => new Set(current).add(saved.id));
+			resetSearchAndFocus();
+			return;
+		}
 		setRecipients((current) =>
-			current.map((recipient) =>
-				recipient.id === id
-					? { id, name: name.trim() || undefined, phone: normalizedPhone }
-					: recipient,
-			),
+			current.map((recipient) => (recipient.id === id ? saved : recipient)),
 		);
 		closeEditor();
 	}
@@ -303,7 +317,12 @@ export function ScheduleRecipients() {
 		removeRecipient(id);
 	}
 
-	function moveToList(event: KeyboardEvent<HTMLInputElement>) {
+	function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+		if (event.key === "Enter" && isNewPhone && !event.nativeEvent.isComposing) {
+			event.preventDefault();
+			openNewRecipient();
+			return;
+		}
 		if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
 		const rows = listRef.current?.querySelectorAll<HTMLElement>(
 			"[role=row][aria-selected]",
@@ -385,7 +404,7 @@ export function ScheduleRecipients() {
 									: "Search by name or phone number"
 							}
 							className={cx(inputElementClassName, "h-8 ps-1 text-start")}
-							onKeyDown={moveToList}
+							onKeyDown={handleSearchKeyDown}
 						/>
 					</div>
 				</Group>
@@ -418,6 +437,7 @@ export function ScheduleRecipients() {
 						editor={
 							recipient.id === editingId ? (
 								<ScheduleRecipientEditor
+									mode={recipient.id === ADD_RECIPIENT_KEY ? "add" : "edit"}
 									name={recipient.name}
 									phone={recipient.phone}
 									onSave={(name, phone) =>
