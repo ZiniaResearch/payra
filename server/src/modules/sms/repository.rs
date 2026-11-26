@@ -1,8 +1,26 @@
 use chrono::{DateTime, Utc};
-use sqlx::PgConnection;
+use serde::Serialize;
+use sqlx::{FromRow, PgConnection, Row, postgres::PgRow};
 use uuid::Uuid;
 
 use crate::modules::auth::AccessIdentity;
+
+#[derive(Serialize)]
+pub(super) struct SavedRecipient {
+    id: String,
+    phone: String,
+    name: Option<String>,
+}
+
+impl FromRow<'_, PgRow> for SavedRecipient {
+    fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+        Ok(Self {
+            id: row.try_get("id")?,
+            phone: row.try_get("phone")?,
+            name: row.try_get("name")?,
+        })
+    }
+}
 
 pub(super) async fn lock_active_session(
     connection: &mut PgConnection,
@@ -54,5 +72,39 @@ pub(super) async fn insert_jobs(
     .bind(message)
     .bind(send_times)
     .fetch_all(connection)
+    .await
+}
+
+pub(super) async fn insert_recipient(
+    connection: &mut PgConnection,
+    account_id: Uuid,
+    phone: &str,
+    name: Option<&str>,
+) -> Result<Option<SavedRecipient>, sqlx::Error> {
+    sqlx::query_as(
+        "INSERT INTO sms_recipients (account_id, phone, name)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (account_id, phone) DO NOTHING
+         RETURNING id::text, phone, name",
+    )
+    .bind(account_id)
+    .bind(phone)
+    .bind(name)
+    .fetch_optional(connection)
+    .await
+}
+
+pub(super) async fn find_recipient(
+    connection: &mut PgConnection,
+    account_id: Uuid,
+    phone: &str,
+) -> Result<SavedRecipient, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT id::text, phone, name FROM sms_recipients
+         WHERE account_id = $1 AND phone = $2",
+    )
+    .bind(account_id)
+    .bind(phone)
+    .fetch_one(connection)
     .await
 }

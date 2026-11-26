@@ -11,7 +11,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
-use super::{encoding, phone::normalize_phone, repository};
+use super::{encoding, phone::normalize_phone, recipients, repository};
 use crate::{modules::auth::AccessIdentity, state::AppState};
 
 const MAX_SMS_PARTS: usize = 5;
@@ -68,6 +68,10 @@ pub(crate) fn routes() -> Router<AppState> {
         .route(
             "/api/sms/jobs",
             post(schedule).layer(DefaultBodyLimit::max(MAX_REQUEST_BYTES)),
+        )
+        .route(
+            "/api/sms/recipients",
+            post(recipients::save).layer(DefaultBodyLimit::max(MAX_REQUEST_BYTES)),
         )
 }
 

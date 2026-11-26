@@ -1,5 +1,6 @@
 mod encoding;
 mod phone;
+mod recipients;
 mod repository;
 mod routes;
 
