@@ -14,8 +14,12 @@ import {
 import { notifySessionEnded } from "@/modules/auth/session-events";
 import { api } from "./client";
 
-interface ApiErrorResponse {
-	error: string;
+/** Reads the error code from a Payra API response body. */
+export function readApiErrorCode(body: unknown): string | undefined {
+	if (typeof body !== "object" || body === null || !("error" in body)) {
+		return undefined;
+	}
+	return typeof body.error === "string" ? body.error : undefined;
 }
 
 type AccessRecovery = "refresh" | "confirm";
@@ -26,14 +30,11 @@ async function requestWithAccess<T>(
 	try {
 		return await api.request<T>(config);
 	} catch (error) {
-		if (
-			!isAxiosError<ApiErrorResponse>(error) ||
-			error.response?.status !== 401
-		) {
+		if (!isAxiosError<unknown>(error) || error.response?.status !== 401) {
 			throw error;
 		}
 
-		const code = error.response.data?.error;
+		const code = readApiErrorCode(error.response.data);
 		return code === "access_missing" || code === "access_expired"
 			? "refresh"
 			: "confirm";
