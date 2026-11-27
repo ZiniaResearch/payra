@@ -5,13 +5,14 @@ use axum::{
     extract::{DefaultBodyLimit, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::post,
+    routing::{get, post},
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use uuid::Uuid;
 
-use super::{encoding, phone::normalize_phone, recipients, repository};
+use super::{encoding, recipients, repository};
 use crate::{modules::auth::AccessIdentity, state::AppState};
 
 const MAX_SMS_PARTS: usize = 5;
@@ -23,7 +24,7 @@ const MAX_REQUEST_BYTES: usize = 16 * 1024;
 #[serde(deny_unknown_fields)]
 struct ScheduleRequest {
     message: String,
-    recipients: Vec<String>,
+    recipient_ids: Vec<String>,
     send_times: Vec<DateTime<Utc>>,
 }
 
@@ -41,10 +42,11 @@ enum ScheduleRejection {
     Invalid(&'static str),
     InactiveSession,
     Unavailable,
+    Unconfirmed,
 }
 
-impl ScheduleRejection {
-    fn database(_: sqlx::Error) -> Self {
+impl From<sqlx::Error> for ScheduleRejection {
+    fn from(_: sqlx::Error) -> Self {
         Self::Unavailable
     }
 }
@@ -58,6 +60,7 @@ impl IntoResponse for ScheduleRejection {
                 StatusCode::SERVICE_UNAVAILABLE,
                 "sms_scheduling_unavailable",
             ),
+            Self::Unconfirmed => (StatusCode::SERVICE_UNAVAILABLE, "sms_schedule_unconfirmed"),
         };
         (status, Json(ErrorResponse { error })).into_response()
     }
@@ -71,7 +74,9 @@ pub(crate) fn routes() -> Router<AppState> {
         )
         .route(
             "/api/sms/recipients",
-            post(recipients::save).layer(DefaultBodyLimit::max(MAX_REQUEST_BYTES)),
+            get(recipients::list)
+                .post(recipients::save)
+                .layer(DefaultBodyLimit::max(MAX_REQUEST_BYTES)),
         )
 }
 
@@ -86,14 +91,11 @@ async fn schedule(
     if encoding::part_count(&request.message) > MAX_SMS_PARTS {
         return Err(ScheduleRejection::Invalid("message_too_long"));
     }
-    let recipients = parse_recipients(&request.recipients)?;
+    let recipient_ids = parse_recipient_ids(&request.recipient_ids)?;
     validate_send_times(&request.send_times)?;
 
-    let mut tx = pool.begin().await.map_err(ScheduleRejection::database)?;
-    if !repository::lock_active_session(&mut tx, identity)
-        .await
-        .map_err(ScheduleRejection::database)?
-    {
+    let mut tx = pool.begin().await?;
+    if !repository::lock_active_session(&mut tx, identity).await? {
         return Err(ScheduleRejection::InactiveSession);
     }
 
@@ -110,13 +112,18 @@ async fn schedule(
     let job_ids = repository::insert_jobs(
         &mut tx,
         identity.account_id(),
-        &recipients,
+        &recipient_ids,
         &request.message,
         &request.send_times,
     )
-    .await
-    .map_err(ScheduleRejection::database)?;
-    tx.commit().await.map_err(ScheduleRejection::database)?;
+    .await?;
+    if job_ids.is_empty() {
+        return Err(ScheduleRejection::Invalid("invalid_recipient"));
+    }
+    // A commit error may mean PostgreSQL saved the jobs but its reply was lost.
+    tx.commit()
+        .await
+        .map_err(|_| ScheduleRejection::Unconfirmed)?;
 
     Ok((StatusCode::CREATED, Json(ScheduleResponse { job_ids })))
 }
@@ -137,20 +144,21 @@ fn validate_send_times(send_times: &[DateTime<Utc>]) -> Result<(), ScheduleRejec
     Ok(())
 }
 
-fn parse_recipients(input: &[String]) -> Result<Vec<String>, ScheduleRejection> {
+fn parse_recipient_ids(input: &[String]) -> Result<Vec<Uuid>, ScheduleRejection> {
     if input.is_empty() {
         return Err(ScheduleRejection::Invalid("recipients_required"));
     }
 
-    let recipients = input
-        .iter()
-        .map(|phone| normalize_phone(phone).ok_or(ScheduleRejection::Invalid("invalid_recipient")))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let mut seen = HashSet::with_capacity(recipients.len());
-    if recipients.iter().any(|phone| !seen.insert(phone.as_str())) {
-        return Err(ScheduleRejection::Invalid("duplicate_recipient"));
+    let mut ids = Vec::with_capacity(input.len());
+    let mut seen = HashSet::with_capacity(input.len());
+    for value in input {
+        let id =
+            Uuid::parse_str(value).map_err(|_| ScheduleRejection::Invalid("invalid_recipient"))?;
+        if !seen.insert(id) {
+            return Err(ScheduleRejection::Invalid("duplicate_recipient"));
+        }
+        ids.push(id);
     }
 
-    Ok(recipients)
+    Ok(ids)
 }

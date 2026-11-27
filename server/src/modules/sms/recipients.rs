@@ -53,6 +53,14 @@ impl IntoResponse for RecipientRejection {
     }
 }
 
+pub(super) async fn list(
+    State(pool): State<PgPool>,
+    Extension(identity): Extension<AccessIdentity>,
+) -> Result<Json<Vec<SavedRecipient>>, RecipientRejection> {
+    let recipients = repository::list_recipients(&pool, identity.account_id()).await?;
+    Ok(Json(recipients))
+}
+
 pub(super) async fn save(
     State(pool): State<PgPool>,
     Extension(identity): Extension<AccessIdentity>,

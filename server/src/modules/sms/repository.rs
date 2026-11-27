@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::{FromRow, PgConnection, Row, postgres::PgRow};
+use sqlx::{FromRow, PgConnection, PgPool, Row, postgres::PgRow};
 use uuid::Uuid;
 
 use crate::modules::auth::AccessIdentity;
@@ -55,23 +55,42 @@ pub(super) async fn lock_active_session(
 pub(super) async fn insert_jobs(
     connection: &mut PgConnection,
     account_id: Uuid,
-    recipients: &[String],
+    recipient_ids: &[Uuid],
     message: &str,
     send_times: &[DateTime<Utc>],
 ) -> Result<Vec<String>, sqlx::Error> {
     sqlx::query_scalar(
-        "INSERT INTO sms_jobs (account_id, recipient_phone, message_text, send_at, send_by)
+        "WITH selected_recipients AS (
+             SELECT phone FROM sms_recipients
+             WHERE account_id = $1 AND id = ANY($2::uuid[])
+         )
+         INSERT INTO sms_jobs (account_id, recipient_phone, message_text, send_at, send_by)
          SELECT $1, recipient.phone, $3, schedule.send_at,
                 schedule.send_at + interval '6 hours'
-         FROM unnest($2::text[]) AS recipient(phone)
+         FROM selected_recipients AS recipient
          CROSS JOIN unnest($4::timestamptz[]) AS schedule(send_at)
+         WHERE (SELECT count(*) FROM selected_recipients) = cardinality($2::uuid[])
          RETURNING id::text",
     )
     .bind(account_id)
-    .bind(recipients)
+    .bind(recipient_ids)
     .bind(message)
     .bind(send_times)
     .fetch_all(connection)
+    .await
+}
+
+pub(super) async fn list_recipients(
+    pool: &PgPool,
+    account_id: Uuid,
+) -> Result<Vec<SavedRecipient>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT id::text, phone, name FROM sms_recipients
+         WHERE account_id = $1
+         ORDER BY phone",
+    )
+    .bind(account_id)
+    .fetch_all(pool)
     .await
 }
 
