@@ -80,6 +80,13 @@ pub(super) async fn insert_jobs(
     .await
 }
 
+pub(super) async fn notify_jobs_changed(connection: &mut PgConnection) -> Result<(), sqlx::Error> {
+    sqlx::query("NOTIFY sms_jobs_changed")
+        .execute(connection)
+        .await?;
+    Ok(())
+}
+
 pub(super) async fn list_recipients(
     pool: &PgPool,
     account_id: Uuid,

@@ -126,6 +126,7 @@ async fn schedule(
     if job_ids.is_empty() {
         return Err(ScheduleRejection::Invalid("invalid_recipient"));
     }
+    repository::notify_jobs_changed(&mut tx).await?;
     // A commit error may mean PostgreSQL saved the jobs but its reply was lost.
     tx.commit()
         .await
