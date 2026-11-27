@@ -100,7 +100,8 @@ export function CloseButton({
 				height={glyph}
 				viewBox={`0 0 ${glyph} ${glyph}`}
 				fill="none"
-				aria-hidden
+				overflow="visible"
+				aria-hidden="true"
 			>
 				<path
 					d={`M${inset} ${inset}L${glyph - inset} ${glyph - inset}`}

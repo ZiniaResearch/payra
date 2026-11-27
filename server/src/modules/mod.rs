@@ -1,3 +1,4 @@
 pub(crate) mod auth;
 pub(crate) mod health;
 pub(crate) mod profile;
+pub(crate) mod sms;

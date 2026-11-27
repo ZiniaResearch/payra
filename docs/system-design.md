@@ -53,9 +53,11 @@ flowchart LR
 The remaining product rules in this document are the agreed target, not currently implemented APIs, jobs, or database tables.
 
 - Default the time zone selector to the customer's saved preference, initially `Asia/Dhaka`. Store the chosen IANA time zone alongside the resolved `send_at` instant. If a local time occurs twice, ask the customer to pick an offset. If it does not occur, ask for another time. [PostgreSQL date and time types](https://www.postgresql.org/docs/current/datatype-datetime.html)
-- The first worker polls every 15 seconds and submits due messages as capacity permits. Its initial late-send window is 15 minutes. Store a send-by instant on each job so a restart can pick up jobs still inside their window and expire older ones. Carrier delivery time is separate from submission time.
+- Commit each new schedule, edit, or cancellation before waking the worker. The worker reads the earliest queued attempt time through an index and keeps its timer in memory. It reads PostgreSQL again on startup and sends a work notice when a job becomes due.
+- Timer changes and work notices leave job status alone. The Android gateway's claim atomically assigns an attempt. Payra records the outcome before acknowledging it. A confirmed temporary failure on attempt 1 can queue attempt 2 within the send window in the same transaction.
+- Store a send-by instant on each job so a restart can pick up queued jobs inside their window and expire older ones. The send window is six hours from the scheduled time.
 - Queue only for an active, opted-in recipient. The account owner shares an invitation link through an existing channel. Record consent for that account and phone number through a flow accepted by the SMS provider. Replacing a phone number deactivates the old recipient entry and creates a new entry that needs consent. Apply provider opt-outs to every affected recipient and recheck consent and suppression before dispatch. [Example SMS provider messaging policy](https://www.twilio.com/en-us/legal/messaging-policy)
-- A queued text can be edited or cancelled until a worker claims it. An edit revalidates the final body, consent, and time. It retains the existing reservation because each scheduled text costs one credit. Cancellation releases that reservation.
+- A queued text can be edited or cancelled until the gateway claims it. An edit revalidates the final body, consent, and time. It retains the existing reservation because each scheduled text costs one credit. Cancellation releases that reservation.
 
 ## Credit lifecycle
 
@@ -87,7 +89,7 @@ SSLCOMMERZ is the sandbox candidate. Confirm that both bKash and Nagad are enabl
 ```mermaid
 stateDiagram-v2
     [*] --> Scheduled: reserve one credit
-    Scheduled --> Sending: worker claims
+    Scheduled --> Sending: Android gateway claims
     Scheduled --> Cancelled: release credit
     Scheduled --> Expired: release credit
     Sending --> Scheduled: confirmed retryable rejection

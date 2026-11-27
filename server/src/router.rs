@@ -1,5 +1,5 @@
 use crate::{
-    modules::{auth, health, profile},
+    modules::{auth, health, profile, sms},
     request_origin,
     state::AppState,
 };
@@ -33,6 +33,7 @@ pub(crate) fn build(state: AppState) -> Router {
         middleware::from_fn_with_state(state.token_signer.clone(), auth::require_access);
     let protected = Router::new()
         .merge(profile::routes())
+        .merge(sms::routes())
         .route_layer(authentication);
 
     Router::new()
