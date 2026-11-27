@@ -127,3 +127,26 @@ pub(super) async fn find_recipient(
     .fetch_one(connection)
     .await
 }
+
+pub(super) async fn update_recipient(
+    connection: &mut PgConnection,
+    account_id: Uuid,
+    recipient_id: Uuid,
+    phone: Option<&str>,
+    name: Option<Option<&str>>,
+) -> Result<Option<SavedRecipient>, sqlx::Error> {
+    sqlx::query_as(
+        "UPDATE sms_recipients
+         SET phone = COALESCE($3, phone),
+             name = CASE WHEN $4 THEN $5 ELSE name END
+         WHERE account_id = $1 AND id = $2
+         RETURNING id::text, phone, name",
+    )
+    .bind(account_id)
+    .bind(recipient_id)
+    .bind(phone)
+    .bind(name.is_some())
+    .bind(name.flatten())
+    .fetch_optional(connection)
+    .await
+}

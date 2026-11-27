@@ -5,7 +5,7 @@ use axum::{
     extract::{DefaultBodyLimit, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{get, patch, post},
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -77,6 +77,10 @@ pub(crate) fn routes() -> Router<AppState> {
             get(recipients::list)
                 .post(recipients::save)
                 .layer(DefaultBodyLimit::max(MAX_REQUEST_BYTES)),
+        )
+        .route(
+            "/api/sms/recipients/{recipient_id}",
+            patch(recipients::update).layer(DefaultBodyLimit::max(MAX_REQUEST_BYTES)),
         )
 }
 

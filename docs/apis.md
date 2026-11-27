@@ -16,11 +16,14 @@
 | DELETE | `/api/profile` | Verify the nonce and signed browser proof, delete the account and its sessions, and clear its cookies. |
 | GET | `/api/sms/recipients` | List the signed-in account’s saved recipients. |
 | POST | `/api/sms/recipients` | Save a phone number with an optional name. |
+| PATCH | `/api/sms/recipients/{recipient_id}` | Update the signed-in account’s saved recipient. |
 | POST | `/api/sms/jobs` | Save one job per recipient and send time in a single transaction. |
 
 See [authentication and account profile](auth.md) for request bodies, responses, and authentication rules.
 
 `POST /api/sms/jobs` accepts `{ message, recipient_ids, send_times }`. Recipient IDs must belong to the signed-in account, and send times are RFC 3339 timestamps. Payra copies each contact’s current number into the jobs. If any selected contact is unavailable, no jobs are saved. A successful save returns `201 Created` with `{ job_ids }`.
+
+`PATCH /api/sms/recipients/{recipient_id}` accepts `phone`, `name`, or both. Omitted fields keep their current values. A `null` or blank name clears it. A supplied phone must be a valid Bangladeshi mobile number. The route requires an active session and returns `200 OK` with `{ id, phone, name }`. It returns `404` for an unavailable recipient and `409` if another recipient on the account already uses that number. Existing jobs keep the number saved when they were scheduled.
 
 ## Android gateway routes in the Bun mock
 
@@ -40,7 +43,6 @@ All SMS routes share the `/api/sms` prefix. The browser uses its signed-in sessi
 | Caller | Method | Path | Purpose |
 | --- | --- | --- | --- |
 | Browser | GET | `/api/sms/jobs` | List the signed-in account’s jobs and their current statuses. |
-| Browser | PATCH | `/api/sms/recipients/{recipient_id}` | Edit a saved recipient. |
 | Browser | DELETE | `/api/sms/recipients/{recipient_id}` | Remove a saved recipient from the list. |
 | Android | WebSocket | `/api/sms/gateway/ws` | Connect and receive `work_available` notices. Replaces `/gateway`. |
 | Android | POST | `/api/sms/gateway/jobs/claim` | Claim one job or get its immediate retry. Replaces `/jobs/claim`. |
