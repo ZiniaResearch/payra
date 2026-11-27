@@ -155,8 +155,14 @@ function TimeColumn({
 			const list = listRef.current;
 			const option = list?.querySelector<HTMLElement>('[aria-selected="true"]');
 			if (!list || !option) return;
+			const optionTop = option.offsetTop;
+			const optionBottom = optionTop + option.offsetHeight;
+			const isVisible =
+				optionBottom > list.scrollTop &&
+				optionTop < list.scrollTop + list.clientHeight;
+			if (isVisible) return;
 			// Leave room below the selected option for the next available values.
-			list.scrollTop = Math.max(0, option.offsetTop - SCROLL_FADE_DISTANCE);
+			list.scrollTop = Math.max(0, optionTop - SCROLL_FADE_DISTANCE);
 		});
 		return () => cancelAnimationFrame(frame);
 	}, [selected]);
