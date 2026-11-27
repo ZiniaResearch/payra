@@ -8,7 +8,7 @@ import { SpinnerGlyph } from "@/components/base/spinner/spinner";
 import { Textarea } from "@/components/base/textarea/textarea";
 import { toast } from "@/components/base/toast/toast";
 import { cx } from "@/utils/cx";
-import { recipientUpdateMutationKey, useScheduleSms } from "./mutations";
+import { savedRecipientChangeKey, useScheduleSms } from "./mutations";
 import type { RecipientId } from "./recipient";
 import { scheduleInstant } from "./ScheduleDateTimePicker";
 import { ScheduleRecipients } from "./ScheduleRecipients";
@@ -38,15 +38,15 @@ function ScheduleMessageForm({ sessionId }: { sessionId: string }) {
 	);
 	const [sendTimes, setSendTimes] = useState(INITIAL_SEND_TIMES);
 	const schedule = useScheduleSms();
-	const pendingRecipientUpdates = useIsMutating({
-		mutationKey: recipientUpdateMutationKey(sessionId),
+	const pendingRecipientChanges = useIsMutating({
+		mutationKey: savedRecipientChangeKey(sessionId),
 	});
 	const submitting = useRef(false);
 	const appliedTimes = sendTimes
 		.map(({ value }) => value)
 		.filter((value) => value !== null);
 	const canSchedule =
-		pendingRecipientUpdates === 0 &&
+		pendingRecipientChanges === 0 &&
 		message.trim().length > 0 &&
 		recipientIds.size > 0 &&
 		appliedTimes.length > 0 &&

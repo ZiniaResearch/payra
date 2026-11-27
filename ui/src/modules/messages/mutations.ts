@@ -20,22 +20,29 @@ interface UpdateRecipientInput {
 	readonly changes: Partial<RecipientFields>;
 }
 
-function useCacheSavedRecipient(sessionId: string) {
+function useUpdateRecipientsCache(sessionId: string) {
 	const queryClient = useQueryClient();
 	const { queryKey } = savedRecipientsQueryOptions(sessionId);
 
-	return async (saved: SavedRecipient) => {
+	return async (
+		update: (current: readonly SavedRecipient[]) => SavedRecipient[],
+	) => {
 		await queryClient.cancelQueries({ queryKey, exact: true });
-		queryClient.setQueryData(queryKey, (current) => {
-			if (!current) return current;
-
-			// The API returns recipients ordered by their normalized phone numbers.
-			const next = current.filter(({ id }) => id !== saved.id);
-			const index = next.findIndex(({ phone }) => phone > saved.phone);
-			next.splice(index === -1 ? next.length : index, 0, saved);
-			return next;
-		});
+		queryClient.setQueryData(queryKey, (current) =>
+			current ? update(current) : current,
+		);
 	};
+}
+
+function upsertSavedRecipient(
+	current: readonly SavedRecipient[],
+	saved: SavedRecipient,
+) {
+	// The API returns recipients ordered by their normalized phone numbers.
+	const next = current.filter(({ id }) => id !== saved.id);
+	const index = next.findIndex(({ phone }) => phone > saved.phone);
+	next.splice(index === -1 ? next.length : index, 0, saved);
+	return next;
 }
 
 async function writeRecipient(
@@ -55,37 +62,82 @@ async function writeRecipient(
 
 /** Saves a new recipient and adds the server response to the session's list. */
 export function useSaveRecipient(sessionId: string) {
-	const cacheRecipient = useCacheSavedRecipient(sessionId);
+	const updateCache = useUpdateRecipientsCache(sessionId);
 	return useMutation({
 		networkMode: "always",
 		gcTime: 0,
 		mutationFn: (data: RecipientFields) =>
 			writeRecipient("POST", RECIPIENTS_PATH, data),
-		onSuccess: cacheRecipient,
+		onSuccess: (saved) =>
+			updateCache((current) => upsertSavedRecipient(current, saved)),
 	});
 }
 
-/** Identifies pending recipient edits for the signed-in browser session. */
-export function recipientUpdateMutationKey(sessionId: string) {
-	return ["sms", "recipients", sessionId, "update"] as const;
+/** Identifies pending changes to saved recipients for this session. */
+export function savedRecipientChangeKey(sessionId: string) {
+	return ["sms", "recipients", sessionId, "change"] as const;
 }
 
 /** Updates a saved recipient and refreshes its cached details by ID. */
 export function useUpdateRecipient(sessionId: string) {
-	const cacheRecipient = useCacheSavedRecipient(sessionId);
+	const updateCache = useUpdateRecipientsCache(sessionId);
 	return useMutation({
-		mutationKey: recipientUpdateMutationKey(sessionId),
+		mutationKey: [...savedRecipientChangeKey(sessionId), "update"],
 		networkMode: "always",
 		retry: false,
 		gcTime: 0,
 		mutationFn: ({ id, changes }: UpdateRecipientInput) =>
 			writeRecipient("PATCH", `${RECIPIENTS_PATH}/${id}`, changes),
-		onSuccess: cacheRecipient,
+		onSuccess: (saved) =>
+			updateCache((current) => upsertSavedRecipient(current, saved)),
 	});
 }
 
-/** Displays a recipient write failure inside the active editor. */
-export function recipientSaveErrorMessage(error: Error): string {
+/** Removes the saved recipient from the cache and draft before the mutation settles. */
+export function useDeleteRecipient(
+	sessionId: string,
+	onDeleted: (id: RecipientId) => void,
+) {
+	const updateCache = useUpdateRecipientsCache(sessionId);
+	return useMutation({
+		mutationKey: [...savedRecipientChangeKey(sessionId), "delete"],
+		networkMode: "always",
+		retry: false,
+		gcTime: 0,
+		mutationFn: async (id: RecipientId) => {
+			try {
+				await authenticatedRequest<void>({
+					method: "DELETE",
+					url: `${RECIPIENTS_PATH}/${id}`,
+					headers: { "X-Requested-With": "XmlHttpRequest" },
+				});
+			} catch (error) {
+				// A retry can find the recipient already removed after a lost reply.
+				const response = isAxiosError<unknown>(error)
+					? error.response
+					: undefined;
+				if (
+					response?.status !== 404 ||
+					readApiErrorCode(response.data) !== "recipient_not_found"
+				) {
+					throw error;
+				}
+			}
+		},
+		onSuccess: async (_result, id) => {
+			await updateCache((current) =>
+				current.filter((recipient) => recipient.id !== id),
+			);
+			onDeleted(id);
+		},
+	});
+}
+
+/** Returns the message to show when a recipient write fails. */
+export function recipientErrorMessage(
+	error: unknown,
+	action: "save" | "delete",
+): string {
 	if (
 		error instanceof AuthenticationRequiredError ||
 		error instanceof SessionRecoveredError
@@ -106,7 +158,7 @@ export function recipientSaveErrorMessage(error: Error): string {
 		}
 	}
 
-	return "Could not save the recipient. Try again.";
+	return `Could not ${action} the recipient. Try again.`;
 }
 
 /** Saves a schedule once and exposes the request state to the composer. */

@@ -28,9 +28,11 @@ import {
 } from "@/components/base/input/input";
 import { Label } from "@/components/base/input/label";
 import { Pagination } from "@/components/base/pagination/pagination";
+import { toast } from "@/components/base/toast/toast";
 import { cx } from "@/utils/cx";
 import {
-	recipientSaveErrorMessage,
+	recipientErrorMessage,
+	useDeleteRecipient,
 	useSaveRecipient,
 	useUpdateRecipient,
 } from "./mutations";
@@ -90,9 +92,11 @@ function getRecipientAccent(id: string) {
 function RecipientRow({
 	recipient,
 	onEdit,
+	onDelete,
 }: {
 	recipient: SavedRecipient;
 	onEdit: ((recipient: SavedRecipient) => void) | undefined;
+	onDelete: ((id: RecipientId) => void) | undefined;
 }) {
 	const { id, name, phone } = recipient;
 	const localPhone = localRecipientPhone(phone);
@@ -154,18 +158,20 @@ function RecipientRow({
 							disabled={!onEdit}
 						/>
 					</Pressable>
-					<Button
-						variant="ghost"
-						size="small"
-						iconOnly
-						leadingIcon={RiDeleteBinLine}
-						aria-label={`Delete ${label}`}
-						className={cx(
-							RECIPIENT_ACTION_CLASS,
-							"hover:text-status-rose-text focus-visible:text-status-rose-text disabled:hover:text-status-rose-text",
-						)}
-						disabled
-					/>
+					<Pressable isDisabled={!onDelete} onPress={() => onDelete?.(id)}>
+						<Button
+							variant="ghost"
+							size="small"
+							iconOnly
+							leadingIcon={RiDeleteBinLine}
+							aria-label={`Delete ${label}`}
+							className={cx(
+								RECIPIENT_ACTION_CLASS,
+								"hover:text-status-rose-text focus-visible:text-status-rose-text disabled:hover:text-status-rose-text",
+							)}
+							disabled={!onDelete}
+						/>
+					</Pressable>
 				</div>
 			</div>
 		</GridListItem>
@@ -233,7 +239,9 @@ export function ScheduleRecipients({
 	const savedRecipients = useQuery(savedRecipientsQueryOptions(sessionId));
 	const saveRecipient = useSaveRecipient(sessionId);
 	const updateRecipient = useUpdateRecipient(sessionId);
+	const deleteRecipient = useDeleteRecipient(sessionId, removeRecipient);
 	const isSaving = saveRecipient.isPending || updateRecipient.isPending;
+	const isChangingRecipients = isSaving || deleteRecipient.isPending;
 	const recipients = savedRecipients.data ?? EMPTY_RECIPIENTS;
 	const recipientsById = useMemo(
 		() =>
@@ -249,7 +257,7 @@ export function ScheduleRecipients({
 		editor &&
 		(editor.kind === "edit" ? updateRecipient.error : saveRecipient.error);
 	const saveError = editorError
-		? recipientSaveErrorMessage(editorError)
+		? recipientErrorMessage(editorError, "save")
 		: undefined;
 	const [query, setQuery] = useState("");
 	const [requestedPage, setPage] = useState(1);
@@ -295,13 +303,13 @@ export function ScheduleRecipients({
 	}
 
 	function changePage(nextPage: number) {
-		if (isSaving) return;
+		if (isChangingRecipients) return;
 		setPage(nextPage);
 		setEditor(undefined);
 	}
 
 	function openNewRecipient() {
-		if (!addPhone || draftPhone || isSaving) return;
+		if (!addPhone || draftPhone || isChangingRecipients) return;
 		saveRecipient.reset();
 		setPage(totalPages);
 		setEditor({ kind: "add", phone: addPhone });
@@ -319,7 +327,7 @@ export function ScheduleRecipients({
 	}
 
 	function changeSelection(selection: Selection) {
-		if (isSaving || selection === "all") return;
+		if (isChangingRecipients || selection === "all") return;
 		if (selection.has(ADD_RECIPIENT_KEY)) {
 			openNewRecipient();
 			return;
@@ -354,6 +362,12 @@ export function ScheduleRecipients({
 	function closeEditor() {
 		setEditor(undefined);
 		inputRef.current?.focus();
+	}
+
+	function deleteSavedRecipient(id: RecipientId) {
+		deleteRecipient.mutate(id, {
+			onError: (error) => toast.error(recipientErrorMessage(error, "delete")),
+		});
 	}
 
 	function saveNewRecipient(fields: RecipientFields) {
@@ -403,7 +417,11 @@ export function ScheduleRecipients({
 
 	return (
 		<div className="flex flex-col gap-2">
-			<TextField value={query} onChange={changeQuery} isReadOnly={isSaving}>
+			<TextField
+				value={query}
+				onChange={changeQuery}
+				isReadOnly={isChangingRecipients}
+			>
 				<Label>Recipients</Label>
 				<Group
 					className={(state) =>
@@ -514,7 +532,12 @@ export function ScheduleRecipients({
 						<RecipientRow
 							key={recipient.id}
 							recipient={recipient}
-							onEdit={isSaving ? undefined : openExistingRecipient}
+							onEdit={isChangingRecipients ? undefined : openExistingRecipient}
+							onDelete={
+								isChangingRecipients || editor
+									? undefined
+									: deleteSavedRecipient
+							}
 						/>
 					),
 				)}
