@@ -14,8 +14,13 @@
 | PUT | `/api/profile/avatar` | Upload raw JPEG, PNG, or WebP bytes. Returns the updated profile. |
 | POST | `/api/profile/deletion` | Issue a short-lived account deletion nonce for the current session. |
 | DELETE | `/api/profile` | Verify the nonce and signed browser proof, delete the account and its sessions, and clear its cookies. |
+| GET | `/api/sms/recipients` | List the signed-in account’s saved recipients. |
+| POST | `/api/sms/recipients` | Save a phone number with an optional name. |
+| POST | `/api/sms/jobs` | Save one job per recipient and send time in a single transaction. |
 
 See [authentication and account profile](auth.md) for request bodies, responses, and authentication rules.
+
+`POST /api/sms/jobs` accepts `{ message, recipient_ids, send_times }`. Recipient IDs must belong to the signed-in account, and send times are RFC 3339 timestamps. Payra copies each contact’s current number into the jobs. If any selected contact is unavailable, no jobs are saved. A successful save returns `201 Created` with `{ job_ids }`.
 
 ## Android gateway routes in the Bun mock
 
@@ -34,18 +39,21 @@ All SMS routes share the `/api/sms` prefix. The browser uses its signed-in sessi
 
 | Caller | Method | Path | Purpose |
 | --- | --- | --- | --- |
-| Browser | POST | `/api/sms/jobs` | Validate and schedule one job per recipient and send time in a single transaction. |
 | Browser | GET | `/api/sms/jobs` | List the signed-in account’s jobs and their current statuses. |
-| Browser | GET | `/api/sms/recipients` | List the account’s saved recipients. |
-| Browser | POST | `/api/sms/recipients` | Save a phone number with an optional name. |
 | Browser | PATCH | `/api/sms/recipients/{recipient_id}` | Edit a saved recipient. |
 | Browser | DELETE | `/api/sms/recipients/{recipient_id}` | Remove a saved recipient from the list. |
 | Android | WebSocket | `/api/sms/gateway/ws` | Connect and receive `work_available` notices. Replaces `/gateway`. |
 | Android | POST | `/api/sms/gateway/jobs/claim` | Claim one job or get its immediate retry. Replaces `/jobs/claim`. |
 | Android | POST | `/api/sms/gateway/jobs/{job_id}/result` | Report a try’s outcome and receive its acknowledgment. Replaces `/jobs/{job_id}/result`. |
 
-Submission validates the final message’s SMS part count before inserting any `sms_jobs` rows. The worker wakes after commit and reads the earliest queued send time. Its WebSocket notice tells Android to claim the job over HTTP.
+Submission validates the final message’s SMS part count before inserting any `sms_jobs` rows. The planned worker will wake after commit and read the earliest queued send time. Its WebSocket notice tells Android to claim the job over HTTP.
 
 The first claim starts one `sms_attempts` row for the job. If try 1 returns `failed` or `partial` within the deadline, Android’s next claim gets the same job as try 2. Payra updates the same attempt row and retains both results. A missing report triggers a review after the timeout.
 
 Payra commits the result before sending `200 OK` with `{ id, attempt }`. Repeating a saved result returns the matching acknowledgment without starting another send.
+
+### Deferred: Safe retries for Schedule SMS
+
+If `POST /api/sms/jobs` commits but the browser loses the response, submitting again can create duplicate jobs. When the outcome is unclear, the form should say it couldn’t confirm the schedule.
+
+The browser will generate one UUID per submission and reuse it when retrying the same request. Payra will save the account-scoped UUID and a request fingerprint in the same transaction as the jobs. A matching retry can return **Already scheduled** without creating more jobs. Reusing the UUID with different input returns `409 Conflict`. The submission record does not need to store job IDs.
