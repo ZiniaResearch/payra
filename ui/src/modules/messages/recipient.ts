@@ -5,10 +5,15 @@ declare const recipientIdBrand: unique symbol;
 /** A saved contact's ID, as returned by the recipient API. */
 export type RecipientId = string & { readonly [recipientIdBrand]: true };
 
-export interface SavedRecipient {
-	id: RecipientId;
-	phone: string;
-	name: string | null;
+/** A normalized phone and optional name ready to send to the recipient API. */
+export interface RecipientFields {
+	readonly phone: string;
+	readonly name: string | null;
+}
+
+/** A saved contact returned by the recipient API. */
+export interface SavedRecipient extends RecipientFields {
+	readonly id: RecipientId;
 }
 
 export function compactRecipientPhone(phone: string) {
