@@ -12,6 +12,7 @@ pub(crate) struct Config {
     pub(crate) google_client_secret: String,
     pub(crate) access_jwt_secret: String,
     pub(crate) refresh_jwt_secret: String,
+    pub(crate) gateway_key_sha256: Option<[u8; 32]>,
 }
 
 pub(crate) struct AvatarStorageConfig {
@@ -35,6 +36,7 @@ pub(crate) fn load() -> Result<Config, Box<dyn Error>> {
         google_client_secret: env::var("GOOGLE_CLIENT_SECRET")?,
         access_jwt_secret: env::var("ACCESS_JWT_SECRET")?,
         refresh_jwt_secret: env::var("REFRESH_JWT_SECRET")?,
+        gateway_key_sha256: load_gateway_key_sha256()?,
     };
     if let Some(storage) = &settings.avatar_storage
         && storage.public_base.as_str().trim_end_matches('/')
@@ -47,6 +49,23 @@ pub(crate) fn load() -> Result<Config, Box<dyn Error>> {
         .into());
     }
     Ok(settings)
+}
+
+fn load_gateway_key_sha256() -> Result<Option<[u8; 32]>, io::Error> {
+    let invalid_hash = || {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "GATEWAY_API_KEY_SHA256 must contain 64 hexadecimal characters",
+        )
+    };
+    let value = match env::var("GATEWAY_API_KEY_SHA256") {
+        Ok(value) => value,
+        Err(env::VarError::NotPresent) => return Ok(None),
+        Err(_) => return Err(invalid_hash()),
+    };
+    let mut digest = [0; 32];
+    hex::decode_to_slice(value, &mut digest).map_err(|_| invalid_hash())?;
+    Ok(Some(digest))
 }
 
 fn load_avatar_storage() -> Result<Option<AvatarStorageConfig>, io::Error> {

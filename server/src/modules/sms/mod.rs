@@ -1,4 +1,5 @@
 mod encoding;
+pub(crate) mod gateway;
 mod phone;
 mod recipients;
 mod repository;

@@ -5,10 +5,11 @@ edition = "2024"
 default-run = "payra"
 
 [dependencies]
-axum = "0.8.9"
+axum = { version = "0.8.9", features = ["ws"] }
 base64 = "0.23.1"
 chrono = "0.4.45"
 dotenvy = "0.15.7"
+hex = "0.4.3"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 jsonwebtoken = { version = "11.1.0", features = ["rust_crypto"] }
 jsonwebtoken-jwks-cache = "0.4"
@@ -19,6 +20,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.11.1"
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres", "uuid", "json", "chrono"] }
+subtle = "2.6.1"
 tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "net", "sync", "time"] }
 tower-http = { version = "0.7.1", features = ["cors"] }
 uuid = { version = "1.29.3", features = ["v7"] }
