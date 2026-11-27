@@ -80,7 +80,9 @@ pub(crate) fn routes() -> Router<AppState> {
         )
         .route(
             "/api/sms/recipients/{recipient_id}",
-            patch(recipients::update).layer(DefaultBodyLimit::max(MAX_REQUEST_BYTES)),
+            patch(recipients::update)
+                .delete(recipients::delete)
+                .layer(DefaultBodyLimit::max(MAX_REQUEST_BYTES)),
         )
 }
 

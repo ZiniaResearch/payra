@@ -150,3 +150,16 @@ pub(super) async fn update_recipient(
     .fetch_optional(connection)
     .await
 }
+
+pub(super) async fn delete_recipient(
+    connection: &mut PgConnection,
+    account_id: Uuid,
+    recipient_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query("DELETE FROM sms_recipients WHERE account_id = $1 AND id = $2")
+        .bind(account_id)
+        .bind(recipient_id)
+        .execute(connection)
+        .await?;
+    Ok(result.rows_affected() != 0)
+}

@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Deserializer, Serialize};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use super::{
@@ -104,10 +104,7 @@ pub(super) async fn save(
     let phone = normalize_phone(&request.phone).ok_or(RecipientRejection::InvalidPhone)?;
     let name = normalize_name(request.name.as_deref())?;
 
-    let mut tx = pool.begin().await?;
-    if !repository::lock_active_session(&mut tx, identity).await? {
-        return Err(RecipientRejection::InactiveSession);
-    }
+    let mut tx = begin_recipient_write(&pool, identity).await?;
 
     let account_id = identity.account_id();
     let (status, recipient) =
@@ -144,10 +141,7 @@ pub(super) async fn update(
         .map(|name| normalize_name(name.as_deref()))
         .transpose()?;
 
-    let mut tx = pool.begin().await?;
-    if !repository::lock_active_session(&mut tx, identity).await? {
-        return Err(RecipientRejection::InactiveSession);
-    }
+    let mut tx = begin_recipient_write(&pool, identity).await?;
 
     let recipient = repository::update_recipient(
         &mut tx,
@@ -161,6 +155,32 @@ pub(super) async fn update(
     tx.commit().await?;
 
     Ok(Json(recipient))
+}
+
+pub(super) async fn delete(
+    State(pool): State<PgPool>,
+    Extension(identity): Extension<AccessIdentity>,
+    Path(recipient_id): Path<String>,
+) -> Result<StatusCode, RecipientRejection> {
+    let recipient_id = Uuid::parse_str(&recipient_id).map_err(|_| RecipientRejection::InvalidId)?;
+    let mut tx = begin_recipient_write(&pool, identity).await?;
+    if !repository::delete_recipient(&mut tx, identity.account_id(), recipient_id).await? {
+        return Err(RecipientRejection::NotFound);
+    }
+    tx.commit().await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn begin_recipient_write(
+    pool: &PgPool,
+    identity: AccessIdentity,
+) -> Result<Transaction<'_, Postgres>, RecipientRejection> {
+    let mut tx = pool.begin().await?;
+    if !repository::lock_active_session(&mut tx, identity).await? {
+        return Err(RecipientRejection::InactiveSession);
+    }
+    Ok(tx)
 }
 
 fn normalize_name(name: Option<&str>) -> Result<Option<&str>, RecipientRejection> {
