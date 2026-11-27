@@ -50,6 +50,11 @@ export interface ScheduleDateTime {
 	time: Time;
 }
 
+/** Resolves a picker value to the same Dhaka instant shown to the user. */
+export function scheduleInstant({ date, time }: ScheduleDateTime): Date {
+	return toCalendarDateTime(date, time).toDate(SCHEDULE_TIME_ZONE);
+}
+
 export function isSameSendTime(
 	first: ScheduleDateTime,
 	second: ScheduleDateTime,
@@ -278,9 +283,7 @@ export function ScheduleDateTimePicker({
 				timeStyle: "short",
 				timeZone: SCHEDULE_TIME_ZONE,
 				hour12: true,
-			}).format(
-				toCalendarDateTime(value.date, value.time).toDate(SCHEDULE_TIME_ZONE),
-			)
+			}).format(scheduleInstant(value))
 		: "Select date and time";
 
 	return (

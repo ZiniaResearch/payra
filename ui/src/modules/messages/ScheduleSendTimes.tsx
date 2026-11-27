@@ -1,5 +1,5 @@
 import { RiAddLine, RiCloseLine } from "@remixicon/react";
-import { useRef, useState } from "react";
+import { type Dispatch, type SetStateAction, useRef } from "react";
 import { Focusable } from "react-aria-components";
 import { Button } from "@/components/base/buttons/button";
 import { IconButton } from "@/components/base/buttons/icon-button";
@@ -13,12 +13,13 @@ import {
 
 const MAX_SEND_TIMES = 5;
 
-interface SendTimeRow {
-	id: number;
-	value: ScheduleDateTime | null;
+/** A picker row can be empty until its date and time are applied. */
+export interface ScheduleSendTimeRow {
+	readonly id: number;
+	readonly value: ScheduleDateTime | null;
 }
 
-function getAddTimeBlockReason(rows: SendTimeRow[]) {
+function getAddTimeBlockReason(rows: readonly ScheduleSendTimeRow[]) {
 	if (rows.length >= MAX_SEND_TIMES) {
 		return `Maximum of ${MAX_SEND_TIMES} send times reached.`;
 	}
@@ -27,10 +28,16 @@ function getAddTimeBlockReason(rows: SendTimeRow[]) {
 	}
 }
 
-export function ScheduleSendTimes() {
-	const [sendTimes, setSendTimes] = useState<SendTimeRow[]>([
-		{ id: 0, value: null },
-	]);
+/** Edits the schedule draft's applied and unfinished send times. */
+export function ScheduleSendTimes({
+	sendTimes,
+	setSendTimes,
+}: {
+	readonly sendTimes: readonly ScheduleSendTimeRow[];
+	readonly setSendTimes: Dispatch<
+		SetStateAction<readonly ScheduleSendTimeRow[]>
+	>;
+}) {
 	const nextSendTimeId = useRef(1);
 	const addTimeBlockReason = getAddTimeBlockReason(sendTimes);
 	const canClearSendTimes = sendTimes.length > 1 || sendTimes[0]?.value != null;

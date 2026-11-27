@@ -1,4 +1,5 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
+import { Toaster } from "@/components/base/toast/toast";
 import { DirectionProvider } from "@/components/foundations/direction/direction";
 import { loadBrowserSession } from "@/modules/auth/browser-key-store";
 import { Sidebar } from "@/modules/layout/Sidebar";
@@ -6,13 +7,15 @@ import { Sidebar } from "@/modules/layout/Sidebar";
 export const Route = createFileRoute("/_protected")({
 	ssr: false,
 	beforeLoad: async () => {
-		if (import.meta.env.SSR) return;
+		if (import.meta.env.SSR) return { sessionId: undefined };
 
 		const session = await loadBrowserSession().catch(() => undefined);
 
 		if (!session) {
 			throw redirect({ to: "/login", replace: true });
 		}
+
+		return { sessionId: session.session_id };
 	},
 	component: ProtectedLayout,
 });
@@ -28,6 +31,7 @@ function ProtectedLayout() {
 					</main>
 				</div>
 			</div>
+			<Toaster position="bottom-end" />
 		</DirectionProvider>
 	);
 }
