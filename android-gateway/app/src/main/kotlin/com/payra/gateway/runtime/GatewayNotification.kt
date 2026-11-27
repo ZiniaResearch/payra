@@ -88,6 +88,7 @@ internal val GatewayConnectionStatus.titleRes: Int
         GatewayConnectionStatus.CONNECTED -> R.string.gateway_server_connected
         GatewayConnectionStatus.OFFLINE -> R.string.gateway_server_offline
         GatewayConnectionStatus.RECONNECTING -> R.string.gateway_server_reconnecting
+        GatewayConnectionStatus.AUTHENTICATION_FAILED -> R.string.gateway_key_authentication_failed
     }
 
 internal val GatewayPhase.titleRes: Int

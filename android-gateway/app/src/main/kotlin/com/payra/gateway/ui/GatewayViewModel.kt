@@ -6,7 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.payra.gateway.network.GatewayServer
+import com.payra.gateway.network.HeartbeatInterval
 import com.payra.gateway.sms.ActiveSim
 import com.payra.gateway.storage.GatewayAppearance
 import com.payra.gateway.storage.GatewayConfiguration
@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import okhttp3.HttpUrl
 
 internal enum class GatewayPage {
     HOME,
@@ -83,7 +84,9 @@ internal class GatewayViewModel(application: Application) : AndroidViewModel(app
         saveSettings { settings.saveSendingSim(sendingSim) }
     }
 
-    fun saveServer(server: GatewayServer) = saveSettings { settings.saveServer(server) }
+    fun saveServer(baseUrl: HttpUrl, heartbeat: HeartbeatInterval, newKey: String?) = saveSettings {
+        settings.saveServer(baseUrl, heartbeat, newKey)
+    }
 
     fun skipServerSetup() = saveSettings { settings.skipServerSetup() }
 

@@ -13,10 +13,11 @@ internal enum class HeartbeatInterval(val seconds: Int) {
 internal data class GatewayServer(
     val baseUrl: HttpUrl,
     val heartbeat: HeartbeatInterval,
+    val encryptedKey: String,
 ) {
     val socketUrl: HttpUrl
         get() = baseUrl.newBuilder()
-            .addPathSegment("gateway")
+            .addPathSegments("api/sms/gateway/ws")
             .build()
 
     val claimUrl: HttpUrl
@@ -31,6 +32,9 @@ internal data class GatewayServer(
         .build()
 
     companion object {
+        fun isValidKey(key: String): Boolean =
+            key.length == 64 && key.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
+
         fun parseBaseUrl(input: String): HttpUrl? {
             val address = input.trim()
             val scheme = address.substringBefore("://").lowercase()

@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.payra.gateway.BuildConfig
 import com.payra.gateway.R
 import com.payra.gateway.network.GatewayServer
@@ -33,15 +34,17 @@ import com.payra.gateway.permissions.GatewayPermission
 import com.payra.gateway.ui.InlineLoadingLabel
 import com.payra.gateway.ui.permissions.openGatewayAppSettings
 import com.payra.gateway.ui.permissions.rememberGatewayPermissionRequest
+import okhttp3.HttpUrl
 
 @Composable
 internal fun ServerSettingsScreen(
     serverAddress: String?,
+    hasGatewayKey: Boolean,
     heartbeat: HeartbeatInterval,
     isFirstSetup: Boolean,
     isSaving: Boolean,
     saveFailed: Boolean,
-    onSave: (GatewayServer) -> Unit,
+    onSave: (HttpUrl, HeartbeatInterval, String?) -> Unit,
     onSkip: () -> Unit,
     onRemove: () -> Unit,
     onBack: () -> Unit,
@@ -49,27 +52,41 @@ internal fun ServerSettingsScreen(
     var url by rememberSaveable(serverAddress) { mutableStateOf(serverAddress.orEmpty()) }
     var interval by rememberSaveable(heartbeat) { mutableStateOf(heartbeat) }
     var invalidUrl by rememberSaveable { mutableStateOf(false) }
+    // The draft credential stays out of Android's saved instance state.
+    var key by remember { mutableStateOf("") }
+    var invalidKey by remember { mutableStateOf(false) }
 
     ServerSettingsContent(
         state = ServerSettingsUiState(
             url = url,
+            key = key,
+            canKeepKey = hasGatewayKey && url.trim() == serverAddress,
             interval = interval,
             isFirstSetup = isFirstSetup,
             hasServer = serverAddress != null,
             isSaving = isSaving,
             invalidUrl = invalidUrl,
+            invalidKey = invalidKey,
             saveFailed = saveFailed,
         ),
         onUrlChange = {
             url = it
             invalidUrl = false
+            invalidKey = false
+        },
+        onKeyChange = {
+            key = it
+            invalidKey = false
         },
         onIntervalChange = { interval = it },
         onSave = {
             if (!isSaving) {
                 val baseUrl = GatewayServer.parseBaseUrl(url)
                 invalidUrl = baseUrl == null
-                if (baseUrl != null) onSave(GatewayServer(baseUrl, interval))
+                val newKey = key.trim().takeIf { it.isNotEmpty() }
+                val canKeepKey = hasGatewayKey && baseUrl?.toString() == serverAddress
+                invalidKey = if (newKey == null) !canKeepKey else !GatewayServer.isValidKey(newKey)
+                if (baseUrl != null && !invalidKey) onSave(baseUrl, interval, newKey)
             }
         },
         onSkip = onSkip,
@@ -83,13 +100,16 @@ internal fun ServerSettingsScreen(
     )
 }
 
-private data class ServerSettingsUiState(
+private class ServerSettingsUiState(
     val url: String,
+    val key: String,
+    val canKeepKey: Boolean,
     val interval: HeartbeatInterval,
     val isFirstSetup: Boolean,
     val hasServer: Boolean,
     val isSaving: Boolean,
     val invalidUrl: Boolean,
+    val invalidKey: Boolean,
     val saveFailed: Boolean,
 )
 
@@ -97,6 +117,7 @@ private data class ServerSettingsUiState(
 private fun ServerSettingsContent(
     state: ServerSettingsUiState,
     onUrlChange: (String) -> Unit,
+    onKeyChange: (String) -> Unit,
     onIntervalChange: (HeartbeatInterval) -> Unit,
     onSave: () -> Unit,
     onSkip: () -> Unit,
@@ -123,7 +144,26 @@ private fun ServerSettingsContent(
                 }
                 Text(stringResource(hint))
             },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
+        )
+        OutlinedTextField(
+            value = state.key,
+            onValueChange = onKeyChange,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !state.isSaving,
+            singleLine = true,
+            label = { Text(stringResource(R.string.gateway_key)) },
+            visualTransformation = PasswordVisualTransformation(),
+            isError = state.invalidKey,
+            supportingText = {
+                val hint = when {
+                    state.invalidKey -> R.string.gateway_key_invalid
+                    state.canKeepKey -> R.string.gateway_key_saved
+                    else -> R.string.gateway_key_hint
+                }
+                Text(stringResource(hint))
+            },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { onSave() }),
         )
 

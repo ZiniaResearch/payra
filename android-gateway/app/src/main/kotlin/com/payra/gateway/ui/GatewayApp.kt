@@ -59,6 +59,7 @@ private fun GatewayReadyScreen(state: GatewayScreenState.Ready, viewModel: Gatew
         GatewayPage.HOME -> GatewayStatusScreen(
             sendingSim = sendingSim,
             serverAddress = serverAddress,
+            hasGatewayKey = configuration.hasGatewayKey,
             isGatewayPaused = viewModel.isGatewayPaused,
             onOpenSettings = { viewModel.openPage(GatewayPage.SETTINGS) },
             onConfigureServer = { viewModel.openPage(GatewayPage.SERVER) },
@@ -83,6 +84,7 @@ private fun GatewayReadyScreen(state: GatewayScreenState.Ready, viewModel: Gatew
         )
         GatewayPage.SERVER -> ServerSettingsScreen(
             serverAddress = serverAddress,
+            hasGatewayKey = configuration.hasGatewayKey,
             heartbeat = configuration.heartbeat,
             isFirstSetup = firstServerSetup,
             isSaving = state.isSaving,

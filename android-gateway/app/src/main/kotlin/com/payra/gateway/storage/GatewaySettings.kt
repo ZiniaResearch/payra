@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.payra.gateway.network.GatewayServer
 import com.payra.gateway.network.HeartbeatInterval
+import java.io.IOException
 import kotlinx.coroutines.flow.map
 import okhttp3.HttpUrl
 
@@ -21,6 +22,7 @@ private val sendingSimCarrierKey = stringPreferencesKey("sending_sim_carrier")
 private val gatewayEnabledSinceKey = longPreferencesKey("gateway_enabled_since")
 private val gatewayPausedKey = booleanPreferencesKey("gateway_paused")
 private val serverUrlKey = stringPreferencesKey("server_base_url")
+private val serverEncryptedKey = stringPreferencesKey("server_encrypted_key")
 private val heartbeatKey = intPreferencesKey("server_heartbeat_seconds")
 private val serverSetupCompleteKey = booleanPreferencesKey("server_setup_complete")
 private val appearanceKey = stringPreferencesKey("appearance")
@@ -50,16 +52,24 @@ internal data class GatewayConfiguration(
     val sendingSim: SendingSim?,
     val runPreference: GatewayRunPreference,
     val serverBaseUrl: HttpUrl?,
+    val encryptedGatewayKey: String?,
     val heartbeat: HeartbeatInterval,
     val serverSetupComplete: Boolean,
     val appearance: GatewayAppearance,
     val maxSmsParts: Int,
 ) {
     val server: GatewayServer?
-        get() = serverBaseUrl?.let { GatewayServer(it, heartbeat) }
+        get() {
+            val url = serverBaseUrl ?: return null
+            val encryptedKey = encryptedGatewayKey ?: return null
+            return GatewayServer(url, heartbeat, encryptedKey)
+        }
+
+    val hasGatewayKey: Boolean
+        get() = encryptedGatewayKey != null
 
     val canStart: Boolean
-        get() = sendingSim != null && serverBaseUrl != null
+        get() = sendingSim != null && serverBaseUrl != null && hasGatewayKey
 }
 
 internal class GatewaySettings(context: Context) {
@@ -85,6 +95,7 @@ internal class GatewaySettings(context: Context) {
             sendingSim = sendingSim,
             runPreference = runPreference,
             serverBaseUrl = readServerUrl(preferences),
+            encryptedGatewayKey = preferences[serverEncryptedKey],
             heartbeat = heartbeat,
             serverSetupComplete = preferences[serverSetupCompleteKey] == true,
             appearance = appearance,
@@ -94,7 +105,9 @@ internal class GatewaySettings(context: Context) {
 
     suspend fun enableGateway() {
         store.edit { preferences ->
-            if (readServerUrl(preferences) == null || preferences[sendingSimIdKey] == null) return@edit
+            if (readServerUrl(preferences) == null || preferences[serverEncryptedKey] == null ||
+                preferences[sendingSimIdKey] == null
+            ) return@edit
             preferences[gatewayEnabledSinceKey] = System.currentTimeMillis()
             preferences.remove(gatewayPausedKey)
         }
@@ -122,14 +135,25 @@ internal class GatewaySettings(context: Context) {
             }
         })
 
-    suspend fun saveServer(server: GatewayServer): GatewayConfiguration =
-        readConfiguration(store.edit { preferences ->
+    suspend fun saveServer(baseUrl: HttpUrl, heartbeat: HeartbeatInterval, newKey: String?): GatewayConfiguration {
+        val encryptedKey = newKey?.let {
+            require(GatewayServer.isValidKey(it))
+            GatewayKeyCipher.encrypt(it)
+        }
+        return readConfiguration(store.edit { preferences ->
+            val savedUrl = readServerUrl(preferences)
+            val hasSavedKey = preferences[serverEncryptedKey] != null
+            if (encryptedKey == null && (savedUrl != baseUrl || !hasSavedKey)) {
+                throw IOException("A gateway key is required for this server address")
+            }
             // Older installs can have a boot-restore preference from before server setup existed.
-            if (readServerUrl(preferences) == null) preferences.remove(gatewayEnabledSinceKey)
-            preferences[serverUrlKey] = server.baseUrl.toString()
-            preferences[heartbeatKey] = server.heartbeat.seconds
+            if (savedUrl == null || !hasSavedKey) preferences.remove(gatewayEnabledSinceKey)
+            if (encryptedKey != null) preferences[serverEncryptedKey] = encryptedKey
+            preferences[serverUrlKey] = baseUrl.toString()
+            preferences[heartbeatKey] = heartbeat.seconds
             preferences[serverSetupCompleteKey] = true
         })
+    }
 
     suspend fun skipServerSetup(): GatewayConfiguration =
         readConfiguration(store.edit { it[serverSetupCompleteKey] = true })
@@ -138,6 +162,7 @@ internal class GatewaySettings(context: Context) {
         readConfiguration(store.edit { preferences ->
             // Clear the address and boot-restore preference in the same write.
             preferences.remove(serverUrlKey)
+            preferences.remove(serverEncryptedKey)
             preferences.remove(gatewayEnabledSinceKey)
             preferences[gatewayPausedKey] = true
         })
