@@ -14,6 +14,7 @@ import {
 	GridListItem,
 	Group,
 	Input,
+	Pressable,
 	type Selection,
 } from "react-aria-components";
 import { Avatar } from "@/components/base/avatar/avatar";
@@ -28,12 +29,17 @@ import {
 import { Label } from "@/components/base/input/label";
 import { Pagination } from "@/components/base/pagination/pagination";
 import { cx } from "@/utils/cx";
-import { recipientSaveErrorMessage, useSaveRecipient } from "./mutations";
+import {
+	recipientSaveErrorMessage,
+	useSaveRecipient,
+	useUpdateRecipient,
+} from "./mutations";
 import { savedRecipientsQueryOptions } from "./queries";
 import {
 	compactRecipientPhone,
 	localRecipientPhone,
 	normalizeRecipientPhone,
+	type RecipientFields,
 	type RecipientId,
 	type SavedRecipient,
 } from "./recipient";
@@ -44,6 +50,8 @@ const EMPTY_RECIPIENTS: readonly SavedRecipient[] = [];
 const ADD_RECIPIENT_KEY = "add-recipient";
 const ROW_CLASS =
 	"grid min-w-0 content-center rounded-lg px-2 py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus-ring";
+const RECIPIENT_ACTION_CLASS =
+	"bg-transparent text-text-primary hover:bg-transparent active:bg-transparent disabled:bg-transparent disabled:text-text-primary";
 const RECIPIENT_ACCENTS = [
 	{
 		tone: "blue",
@@ -79,7 +87,13 @@ function getRecipientAccent(id: string) {
 	);
 }
 
-function RecipientRow({ recipient }: { recipient: SavedRecipient }) {
+function RecipientRow({
+	recipient,
+	onEdit,
+}: {
+	recipient: SavedRecipient;
+	onEdit: ((recipient: SavedRecipient) => void) | undefined;
+}) {
 	const { id, name, phone } = recipient;
 	const localPhone = localRecipientPhone(phone);
 	const label = name ?? localPhone;
@@ -126,22 +140,30 @@ function RecipientRow({ recipient }: { recipient: SavedRecipient }) {
 					</bdi>
 				</div>
 				<div className="flex shrink-0 items-center gap-1">
-					<Button
-						variant="ghost"
-						size="small"
-						iconOnly
-						leadingIcon={RiPencilLine}
-						aria-label={`Edit ${label}`}
-						className="disabled:bg-transparent"
-						disabled
-					/>
+					<Pressable isDisabled={!onEdit} onPress={() => onEdit?.(recipient)}>
+						<Button
+							variant="ghost"
+							size="small"
+							iconOnly
+							leadingIcon={RiPencilLine}
+							aria-label={`Edit ${label}`}
+							className={cx(
+								RECIPIENT_ACTION_CLASS,
+								"hover:text-status-blue-text focus-visible:text-status-blue-text",
+							)}
+							disabled={!onEdit}
+						/>
+					</Pressable>
 					<Button
 						variant="ghost"
 						size="small"
 						iconOnly
 						leadingIcon={RiDeleteBinLine}
 						aria-label={`Delete ${label}`}
-						className="disabled:bg-transparent"
+						className={cx(
+							RECIPIENT_ACTION_CLASS,
+							"hover:text-status-rose-text focus-visible:text-status-rose-text disabled:hover:text-status-rose-text",
+						)}
 						disabled
 					/>
 				</div>
@@ -198,6 +220,10 @@ interface ScheduleRecipientsProps {
 	>;
 }
 
+type RecipientEditor =
+	| { readonly kind: "add"; readonly phone: string }
+	| { readonly kind: "edit"; readonly recipient: SavedRecipient };
+
 /** Searches and saves contacts, and edits the schedule draft's selection. */
 export function ScheduleRecipients({
 	sessionId,
@@ -206,30 +232,44 @@ export function ScheduleRecipients({
 }: ScheduleRecipientsProps) {
 	const savedRecipients = useQuery(savedRecipientsQueryOptions(sessionId));
 	const saveRecipient = useSaveRecipient(sessionId);
+	const updateRecipient = useUpdateRecipient(sessionId);
+	const isSaving = saveRecipient.isPending || updateRecipient.isPending;
 	const recipients = savedRecipients.data ?? EMPTY_RECIPIENTS;
 	const recipientsById = useMemo(
 		() =>
 			new Map<string, SavedRecipient>(recipients.map((row) => [row.id, row])),
 		[recipients],
 	);
-	const [draftPhone, setDraftPhone] = useState<string>();
+	const [editor, setEditor] = useState<RecipientEditor>();
+	const draftPhone = editor?.kind === "add" ? editor.phone : undefined;
+	const editedRecipient =
+		editor?.kind === "edit" ? editor.recipient : undefined;
+	const editorKey = draftPhone ? ADD_RECIPIENT_KEY : editedRecipient?.id;
+	const editorError =
+		editor &&
+		(editor.kind === "edit" ? updateRecipient.error : saveRecipient.error);
+	const saveError = editorError
+		? recipientSaveErrorMessage(editorError)
+		: undefined;
 	const [query, setQuery] = useState("");
 	const [requestedPage, setPage] = useState(1);
 	const inputRef = useRef<HTMLInputElement>(null);
 	const listRef = useRef<HTMLDivElement>(null);
 	const listId = useId();
 
-	const phoneQuery = compactRecipientPhone(query);
-	const isPhoneQuery = /^\+?[0-9]+$/.test(phoneQuery);
-	const nameQuery = query.trim().toLocaleLowerCase();
-	const matches = nameQuery
-		? recipients.filter(({ phone, name }) =>
-				isPhoneQuery
-					? phone.includes(phoneQuery) ||
-						localRecipientPhone(phone).includes(phoneQuery)
-					: name?.toLocaleLowerCase().includes(nameQuery),
-			)
-		: recipients;
+	const matches = useMemo(() => {
+		const nameQuery = query.trim().toLocaleLowerCase();
+		if (!nameQuery) return recipients;
+
+		const phoneQuery = compactRecipientPhone(query);
+		if (/^\+?[0-9]+$/.test(phoneQuery)) {
+			// The normalized +880 number already ends in the local 01… number.
+			return recipients.filter(({ phone }) => phone.includes(phoneQuery));
+		}
+		return recipients.filter(({ name }) =>
+			name?.toLocaleLowerCase().includes(nameQuery),
+		);
+	}, [query, recipients]);
 
 	const phoneToAdd = normalizeRecipientPhone(query);
 	const addPhone =
@@ -255,27 +295,31 @@ export function ScheduleRecipients({
 	}
 
 	function changePage(nextPage: number) {
-		if (saveRecipient.isPending) return;
+		if (isSaving) return;
 		setPage(nextPage);
-		setDraftPhone(undefined);
+		setEditor(undefined);
 	}
 
 	function openNewRecipient() {
-		if (!addPhone || draftPhone) return;
+		if (!addPhone || draftPhone || isSaving) return;
 		saveRecipient.reset();
 		setPage(totalPages);
-		setDraftPhone(addPhone);
+		setEditor({ kind: "add", phone: addPhone });
+	}
+
+	function openExistingRecipient(recipient: SavedRecipient) {
+		updateRecipient.reset();
+		setEditor({ kind: "edit", recipient });
 	}
 
 	function resetSearchAndFocus() {
 		setQuery("");
 		setPage(1);
-		setDraftPhone(undefined);
-		inputRef.current?.focus();
+		closeEditor();
 	}
 
 	function changeSelection(selection: Selection) {
-		if (saveRecipient.isPending || selection === "all") return;
+		if (isSaving || selection === "all") return;
 		if (selection.has(ADD_RECIPIENT_KEY)) {
 			openNewRecipient();
 			return;
@@ -308,23 +352,36 @@ export function ScheduleRecipients({
 	}
 
 	function closeEditor() {
-		setDraftPhone(undefined);
+		setEditor(undefined);
 		inputRef.current?.focus();
 	}
 
-	function saveNewRecipient(name: string, phone: string) {
-		const normalizedPhone = normalizeRecipientPhone(phone);
-		if (!normalizedPhone) {
-			return "Enter a valid Bangladeshi mobile number.";
+	function saveNewRecipient(fields: RecipientFields) {
+		saveRecipient.mutate(fields, {
+			onSuccess: (saved) => {
+				setSelectedRecipients((current) => new Set(current).add(saved.id));
+				resetSearchAndFocus();
+			},
+		});
+	}
+
+	function saveEditedRecipient({ phone, name }: RecipientFields) {
+		if (!editedRecipient) return;
+		const phoneChanged = phone !== editedRecipient.phone;
+		const nameChanged = name !== editedRecipient.name;
+		if (!phoneChanged && !nameChanged) {
+			closeEditor();
+			return;
 		}
-		saveRecipient.mutate(
-			{ phone: normalizedPhone, name: name.trim() || null },
+		updateRecipient.mutate(
 			{
-				onSuccess: (saved) => {
-					setSelectedRecipients((current) => new Set(current).add(saved.id));
-					resetSearchAndFocus();
+				id: editedRecipient.id,
+				changes: {
+					...(phoneChanged ? { phone } : {}),
+					...(nameChanged ? { name } : {}),
 				},
 			},
+			{ onSuccess: closeEditor },
 		);
 	}
 
@@ -346,11 +403,7 @@ export function ScheduleRecipients({
 
 	return (
 		<div className="flex flex-col gap-2">
-			<TextField
-				value={query}
-				onChange={changeQuery}
-				isReadOnly={saveRecipient.isPending}
-			>
+			<TextField value={query} onChange={changeQuery} isReadOnly={isSaving}>
 				<Label>Recipients</Label>
 				<Group
 					className={(state) =>
@@ -400,10 +453,10 @@ export function ScheduleRecipients({
 				id={listId}
 				aria-label="Saved recipients"
 				selectionMode="multiple"
-				keyboardNavigationBehavior={draftPhone ? "tab" : "arrow"}
+				keyboardNavigationBehavior={editor ? "tab" : "arrow"}
 				shouldSelectOnPressUp
 				disabledBehavior="selection"
-				disabledKeys={draftPhone ? [ADD_RECIPIENT_KEY] : []}
+				disabledKeys={editorKey ? [editorKey] : []}
 				selectedKeys={selectedRecipients}
 				onSelectionChange={changeSelection}
 				className="grid gap-1 rounded-xl border border-border-button-default bg-background-primary-default p-1 outline-none"
@@ -439,9 +492,32 @@ export function ScheduleRecipients({
 					)
 				}
 			>
-				{pageRecipients.map((recipient) => (
-					<RecipientRow key={recipient.id} recipient={recipient} />
-				))}
+				{pageRecipients.map((recipient) =>
+					recipient.id === editedRecipient?.id ? (
+						<GridListItem
+							key={recipient.id}
+							id={recipient.id}
+							focusMode="child"
+							textValue={recipient.name ?? localRecipientPhone(recipient.phone)}
+							className={ROW_CLASS}
+						>
+							<ScheduleRecipientEditor
+								initialPhone={localRecipientPhone(editedRecipient.phone)}
+								initialName={editedRecipient.name}
+								isSaving={isSaving}
+								saveError={saveError}
+								onSave={saveEditedRecipient}
+								onCancel={closeEditor}
+							/>
+						</GridListItem>
+					) : (
+						<RecipientRow
+							key={recipient.id}
+							recipient={recipient}
+							onEdit={isSaving ? undefined : openExistingRecipient}
+						/>
+					),
+				)}
 				{addPhone && page === totalPages && (
 					<GridListItem
 						id={ADD_RECIPIENT_KEY}
@@ -455,13 +531,9 @@ export function ScheduleRecipients({
 					>
 						{draftPhone ? (
 							<ScheduleRecipientEditor
-								phone={localRecipientPhone(draftPhone)}
-								isSaving={saveRecipient.isPending}
-								saveError={
-									saveRecipient.error
-										? recipientSaveErrorMessage(saveRecipient.error)
-										: undefined
-								}
+								initialPhone={localRecipientPhone(draftPhone)}
+								isSaving={isSaving}
+								saveError={saveError}
 								onSave={saveNewRecipient}
 								onCancel={closeEditor}
 							/>

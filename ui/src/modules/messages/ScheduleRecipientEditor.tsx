@@ -1,36 +1,47 @@
 import { type SubmitEvent, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/base/buttons/button";
 import { Input } from "@/components/base/input/input";
+import { SpinnerGlyph } from "@/components/base/spinner/spinner";
+import { normalizeRecipientPhone, type RecipientFields } from "./recipient";
 
 interface ScheduleRecipientEditorProps {
-	phone: string;
-	isSaving: boolean;
-	saveError: string | undefined;
-	onSave: (name: string, phone: string) => string | undefined;
-	onCancel: () => void;
+	readonly initialPhone: string;
+	readonly initialName?: string | null;
+	readonly isSaving: boolean;
+	readonly saveError: string | undefined;
+	readonly onSave: (fields: RecipientFields) => void;
+	readonly onCancel: () => void;
 }
 
+/** Edits a recipient's phone number and optional name in the list. */
 export function ScheduleRecipientEditor({
-	phone,
+	initialPhone,
+	initialName,
 	isSaving,
 	saveError,
 	onSave,
 	onCancel,
 }: ScheduleRecipientEditorProps) {
-	const [draftName, setDraftName] = useState("");
-	const [draftPhone, setDraftPhone] = useState(phone);
+	const [draftName, setDraftName] = useState(initialName ?? "");
+	const [draftPhone, setDraftPhone] = useState(initialPhone);
 	const [phoneError, setPhoneError] = useState<string>();
 	const nameInput = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
-		// Let the list finish restoring focus after replacing the add row.
+		// Let the list finish restoring focus after replacing the row.
 		const frame = requestAnimationFrame(() => nameInput.current?.focus());
 		return () => cancelAnimationFrame(frame);
 	}, []);
 
 	function save(event: SubmitEvent<HTMLFormElement>) {
 		event.preventDefault();
-		if (!isSaving) setPhoneError(onSave(draftName, draftPhone));
+		if (isSaving) return;
+		const phone = normalizeRecipientPhone(draftPhone);
+		if (!phone) {
+			setPhoneError("Enter a valid Bangladeshi mobile number.");
+			return;
+		}
+		onSave({ phone, name: draftName.trim() || null });
 	}
 
 	return (
@@ -39,6 +50,11 @@ export function ScheduleRecipientEditor({
 			aria-busy={isSaving}
 			onSubmit={save}
 			onKeyDown={(event) => {
+				if (event.key === "Enter") {
+					// Keep native form submission from being intercepted by the grid.
+					event.stopPropagation();
+					return;
+				}
 				if (event.key !== "Escape") return;
 				event.stopPropagation();
 				if (!isSaving) onCancel();
@@ -90,7 +106,14 @@ export function ScheduleRecipientEditor({
 					className="px-1 sm:px-2"
 					disabled={isSaving}
 				>
-					{isSaving ? "Saving…" : "Save"}
+					{isSaving ? (
+						<span className="inline-flex items-center gap-1.5">
+							<SpinnerGlyph size="xs" className="text-current" />
+							Saving…
+						</span>
+					) : (
+						"Save"
+					)}
 				</Button>
 			</div>
 			{saveError && (
