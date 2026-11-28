@@ -5,7 +5,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.database.sqlite.SQLiteException
-import android.telephony.SmsManager
 import android.util.Log
 import com.payra.gateway.storage.GatewayDatabase
 import com.payra.gateway.storage.SmsSendPart
@@ -31,7 +30,7 @@ class SmsResultReceiver : BroadcastReceiver() {
             try {
                 withTimeoutOrNull(8_000) {
                     val state = GatewayDatabase.getInstance(appContext).smsJobs().recordPartResult(
-                        serverUrl, jobId, part, Activity.RESULT_OK, temporaryErrorCodes, System.currentTimeMillis(),
+                        serverUrl, jobId, part, Activity.RESULT_OK, System.currentTimeMillis(),
                     )
                     if (state != null) Log.i(TAG, "Job $jobId outcome: $state")
                 }
@@ -50,6 +49,5 @@ class SmsResultReceiver : BroadcastReceiver() {
         const val EXTRA_JOB_ID = "jobId"
         const val EXTRA_ATTEMPT_ID = "attemptId"
         const val EXTRA_PART_INDEX = "partIndex"
-        private val temporaryErrorCodes = listOf(SmsManager.RESULT_ERROR_NO_SERVICE, SmsManager.RESULT_ERROR_RADIO_OFF)
     }
 }

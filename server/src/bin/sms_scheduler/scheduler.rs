@@ -11,7 +11,7 @@ const JOBS_CHANGED_CHANNEL: &str = "sms_jobs_changed";
 const RETRY_DELAY: Duration = Duration::from_secs(2);
 
 struct SendTimer {
-    send_at: DateTime<Utc>,
+    next_attempt_at: DateTime<Utc>,
     deadline: Instant,
 }
 
@@ -55,48 +55,48 @@ async fn schedule(
     changes.changed().await?;
     let timer = sleep(Duration::ZERO);
     tokio::pin!(timer);
-    let mut armed_send_at = None;
+    let mut armed_for = None;
 
     loop {
         let next_timer = match check_queue(pool).await {
             Ok(next_timer) => next_timer,
             Err(error) => {
                 eprintln!("SMS scheduler queue check failed: {error}. Retrying.");
-                armed_send_at = None;
+                armed_for = None;
                 sleep(RETRY_DELAY).await;
                 continue;
             }
         };
 
         match next_timer {
-            Some(next) if armed_send_at != Some(next.send_at) => {
+            Some(next) if armed_for != Some(next.next_attempt_at) => {
                 timer.as_mut().reset(next.deadline);
-                armed_send_at = Some(next.send_at);
-                println!("SMS scheduler next send time: {}", next.send_at);
+                armed_for = Some(next.next_attempt_at);
+                println!("SMS scheduler next send time: {}", next.next_attempt_at);
             }
             Some(_) => {}
-            None => armed_send_at = None,
+            None => armed_for = None,
         }
 
         tokio::select! {
-            () = &mut timer, if armed_send_at.is_some() => armed_send_at = None,
+            () = &mut timer, if armed_for.is_some() => armed_for = None,
             result = changes.changed() => result?,
         }
     }
 }
 
 async fn check_queue(pool: &PgPool) -> Result<Option<SendTimer>, sqlx::Error> {
-    let (has_due_jobs, next_send_at, checked_at): (bool, Option<DateTime<Utc>>, DateTime<Utc>) =
+    let (has_due_jobs, next_attempt_at, checked_at): (bool, Option<DateTime<Utc>>, DateTime<Utc>) =
         sqlx::query_as(
             "SELECT EXISTS (
                  SELECT 1 FROM sms_jobs
                  WHERE status = 'queued'
-                   AND send_at <= statement_timestamp()
+                   AND next_attempt_at <= statement_timestamp()
                    AND send_by > statement_timestamp()
              ), (
-                 SELECT send_at FROM sms_jobs
-                 WHERE status = 'queued' AND send_at > statement_timestamp()
-                 ORDER BY send_at, id
+                 SELECT next_attempt_at FROM sms_jobs
+                 WHERE status = 'queued' AND next_attempt_at > statement_timestamp()
+                 ORDER BY next_attempt_at, id
                  LIMIT 1
              ), statement_timestamp()",
         )
@@ -104,9 +104,9 @@ async fn check_queue(pool: &PgPool) -> Result<Option<SendTimer>, sqlx::Error> {
         .await?;
 
     // Measure the delay using PostgreSQL's clock so the worker can run on a separate host.
-    let timer = next_send_at.map(|send_at| SendTimer {
-        send_at,
-        deadline: Instant::now() + (send_at - checked_at).to_std().unwrap_or_default(),
+    let timer = next_attempt_at.map(|next_attempt_at| SendTimer {
+        next_attempt_at,
+        deadline: Instant::now() + (next_attempt_at - checked_at).to_std().unwrap_or_default(),
     });
 
     if has_due_jobs {

@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.catch
 internal fun GatewayStatusScreen(
     sendingSim: SendingSim,
     serverAddress: String?,
+    hasGatewayKey: Boolean,
     isGatewayPaused: Flow<Boolean>,
     onOpenSettings: () -> Unit,
     onConfigureServer: () -> Unit,
@@ -114,6 +115,7 @@ internal fun GatewayStatusScreen(
             notificationAccess = notificationPermission?.access,
             phase = phase,
             serverAddress = serverAddress,
+            hasGatewayKey = hasGatewayKey,
             connectionStatus = runtime.connectionStatus,
             lastWorkNotice = runtime.lastWorkNoticeAtMillis?.let { DateFormat.getTimeFormat(context).format(Date(it)) },
             currentJob = currentSmsJob(),
@@ -128,7 +130,7 @@ internal fun GatewayStatusScreen(
         onAllowSms = { requestPermission(smsPermission.request) },
         onAllowNotifications = { notificationPermission?.let { requestPermission(it.request) } },
         onOpenAppSettings = { openGatewayAppSettings(context) },
-        onStart = { if (serverAddress != null) GatewayRuntime.start(context) },
+        onStart = { if (serverAddress != null && hasGatewayKey) GatewayRuntime.start(context) },
         onPause = { GatewayRuntime.pause(context) },
     )
 }

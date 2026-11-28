@@ -43,6 +43,7 @@ internal data class GatewayStatusUiState(
     val notificationAccess: PermissionAccess?,
     val phase: GatewayPhase,
     val serverAddress: String?,
+    val hasGatewayKey: Boolean,
     val connectionStatus: GatewayConnectionStatus,
     val lastWorkNotice: String?,
     val currentJob: CurrentSmsJob?,
@@ -109,6 +110,7 @@ internal fun GatewayStatusContent(
 
             ServerConnectionCard(
                 serverAddress = state.serverAddress,
+                hasGatewayKey = state.hasGatewayKey,
                 status = state.connectionStatus,
                 lastWorkNotice = state.lastWorkNotice,
                 onConfigureServer = onConfigureServer,
@@ -203,7 +205,10 @@ private fun GatewayOperationCard(
                         Text(text = stringResource(label))
                     }
                 } else if (phase != GatewayPhase.PERMISSION_REQUIRED) {
-                    Button(onClick = onStart, enabled = phase != GatewayPhase.STARTING && state.serverAddress != null) {
+                    Button(
+                        onClick = onStart,
+                        enabled = phase != GatewayPhase.STARTING && state.serverAddress != null && state.hasGatewayKey,
+                    ) {
                         Text(text = stringResource(R.string.gateway_runtime_start))
                     }
                 }
@@ -226,6 +231,7 @@ private fun GatewayOperationCard(
 @Composable
 private fun ServerConnectionCard(
     serverAddress: String?,
+    hasGatewayKey: Boolean,
     status: GatewayConnectionStatus,
     lastWorkNotice: String?,
     onConfigureServer: () -> Unit,
@@ -237,13 +243,17 @@ private fun ServerConnectionCard(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(stringResource(R.string.gateway_server_connection), style = MaterialTheme.typography.labelLarge)
-            val title = if (serverAddress == null) R.string.gateway_server_address_needed else status.titleRes
+            val title = when {
+                serverAddress == null -> R.string.gateway_server_address_needed
+                !hasGatewayKey -> R.string.gateway_key_needed
+                else -> status.titleRes
+            }
             Text(
                 text = stringResource(title),
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 style = MaterialTheme.typography.titleLarge,
             )
-            if (serverAddress == null) {
+            if (serverAddress == null || !hasGatewayKey || status == GatewayConnectionStatus.AUTHENTICATION_FAILED) {
                 TextButton(onClick = onConfigureServer) {
                     Text(stringResource(R.string.gateway_set_up_server))
                 }

@@ -1,12 +1,14 @@
 package com.payra.gateway.network
 
 import com.payra.gateway.storage.PendingSmsReport
+import com.payra.gateway.storage.SmsJobState
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -27,15 +29,14 @@ internal sealed interface ReportResult {
     data class Failure(val reason: String, val retryable: Boolean = false) : ReportResult
 }
 
-internal class GatewayApi(baseClient: OkHttpClient) {
+internal class GatewayApi(baseClient: OkHttpClient, private val gatewayKey: String) {
     private val client = baseClient.newBuilder()
         .retryOnConnectionFailure(false)
         .callTimeout(15, TimeUnit.SECONDS)
         .build()
 
     suspend fun claimJob(server: GatewayServer): ClaimResult {
-        val request = Request.Builder()
-            .url(server.claimUrl)
+        val request = authenticatedRequest(server.claimUrl)
             .post(RequestBody.EMPTY)
             .build()
         return try {
@@ -48,15 +49,18 @@ internal class GatewayApi(baseClient: OkHttpClient) {
     }
 
     suspend fun reportResult(server: GatewayServer, report: PendingSmsReport): ReportResult {
+        val status = when (report.state) {
+            SmsJobState.SENT, SmsJobState.FAILED, SmsJobState.PARTIAL, SmsJobState.UNKNOWN ->
+                report.state.name.lowercase()
+            SmsJobState.TOO_LONG -> "failed"
+            SmsJobState.QUEUED, SmsJobState.SENDING -> return ReportResult.Failure("SMS result is pending")
+        }
         val body = JSONObject()
             .put("attempt", report.attemptNumber)
-            .put("status", report.state.name.lowercase())
-            .put("partCount", report.partCount ?: JSONObject.NULL)
-            .put("errorCode", report.errorCode ?: JSONObject.NULL)
-            .put("retryable", report.retryable)
+            .put("status", status)
             .toString()
             .toRequestBody(JSON)
-        val request = Request.Builder().url(server.resultUrl(report.id)).post(body).build()
+        val request = authenticatedRequest(server.resultUrl(report.id)).post(body).build()
         return try {
             execute(request) { response -> readAcknowledgment(response, report) }
         } catch (error: IOException) {
@@ -65,6 +69,10 @@ internal class GatewayApi(baseClient: OkHttpClient) {
             ReportResult.Failure("Invalid acknowledgment")
         }
     }
+
+    private fun authenticatedRequest(url: HttpUrl) = Request.Builder()
+        .url(url)
+        .header("Authorization", "Bearer $gatewayKey")
 
     private suspend fun <T> execute(request: Request, read: (Response) -> T): T = suspendCancellableCoroutine { continuation ->
         val call = client.newCall(request)
@@ -84,7 +92,7 @@ internal class GatewayApi(baseClient: OkHttpClient) {
         when (val code = response.code) {
             204 -> return ClaimResult.Empty
             200 -> Unit
-            else -> return ClaimResult.Failure("HTTP $code", retryable = code in 500..599)
+            else -> return ClaimResult.Failure("HTTP $code", retryable = isRetryableStatus(code))
         }
 
         val job = JSONObject(response.body.string())
@@ -103,13 +111,15 @@ internal class GatewayApi(baseClient: OkHttpClient) {
 
     private fun readAcknowledgment(response: Response, report: PendingSmsReport): ReportResult {
         val code = response.code
-        if (code != 200) return ReportResult.Failure("HTTP $code", retryable = code == 408 || code in 500..599)
+        if (code != 200) return ReportResult.Failure("HTTP $code", retryable = isRetryableStatus(code))
         val responseBody = JSONObject(response.body.string())
         if (responseBody.opt("id") == report.id && responseBody.opt("attempt") == report.attemptNumber) {
             return ReportResult.Acknowledged
         }
         return ReportResult.Failure("Acknowledgment did not match this attempt")
     }
+
+    private fun isRetryableStatus(code: Int): Boolean = code == 408 || code == 429 || code in 500..599
 
     companion object {
         private val JSON = "application/json; charset=utf-8".toMediaType()

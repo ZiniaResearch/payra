@@ -33,6 +33,7 @@ internal data class SmsJob(
     val startedAtMillis: Long? = null,
     val partCount: Int? = null,
     val finishedAtMillis: Long? = null,
+    // Retained for the existing Room schema. Payra decides whether to retry.
     val errorCode: Int? = null,
     @ColumnInfo(defaultValue = "1")
     val attemptNumber: Int = 1,
@@ -53,7 +54,4 @@ internal data class PendingSmsReport(
     val id: String,
     val attemptNumber: Int,
     val state: SmsJobState,
-    val partCount: Int?,
-    val errorCode: Int?,
-    val retryable: Boolean,
 )

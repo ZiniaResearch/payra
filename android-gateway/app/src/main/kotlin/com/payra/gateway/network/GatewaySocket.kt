@@ -26,12 +26,14 @@ internal enum class GatewayConnectionStatus {
     CONNECTED,
     OFFLINE,
     RECONNECTING,
+    AUTHENTICATION_FAILED,
 }
 
 internal class GatewaySocket(private val client: OkHttpClient) {
     // The service owns this call. Cancelling it also cancels the socket and any retry delay.
     suspend fun monitor(
         server: GatewayServer,
+        gatewayKey: String,
         networks: Flow<Network?>,
         beforeConnect: () -> Boolean,
         onStatus: (GatewayConnectionStatus) -> Unit,
@@ -40,10 +42,15 @@ internal class GatewaySocket(private val client: OkHttpClient) {
         val socketClient = client.newBuilder()
             .pingInterval(server.heartbeat.seconds.toLong(), TimeUnit.SECONDS)
             .build()
-        val request = Request.Builder().url(server.socketUrl).build()
+        val request = Request.Builder()
+            .url(server.socketUrl)
+            .header("Authorization", "Bearer $gatewayKey")
+            .build()
         var attempted = false
+        var authenticationFailed = false
 
         networks.collectLatest { network ->
+            if (authenticationFailed) return@collectLatest
             if (network == null) {
                 onStatus(GatewayConnectionStatus.OFFLINE)
                 return@collectLatest
@@ -61,12 +68,14 @@ internal class GatewaySocket(private val client: OkHttpClient) {
                             Log.i(TAG, "WebSocket connected")
                             onStatus(GatewayConnectionStatus.CONNECTED)
                         }
-                        SocketEvent.WORK_AVAILABLE -> {
-                            Log.i(TAG, "Received work_available")
-                            onWorkAvailable()
+                        SocketEvent.WORK_AVAILABLE -> onWorkAvailable()
+                        SocketEvent.AUTHENTICATION_FAILED -> {
+                            authenticationFailed = true
+                            onStatus(GatewayConnectionStatus.AUTHENTICATION_FAILED)
                         }
                     }
                 }
+                if (authenticationFailed) return@collectLatest
 
                 if (openedAt?.let { SystemClock.elapsedRealtime() - it >= MAX_RETRY_MILLIS } == true) {
                     retryDelay = INITIAL_RETRY_MILLIS
@@ -103,6 +112,7 @@ internal class GatewaySocket(private val client: OkHttpClient) {
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                if (response?.code == 401) trySend(SocketEvent.AUTHENTICATION_FAILED)
                 if (close()) {
                     Log.w(TAG, "WebSocket failed (${response?.code ?: t.javaClass.simpleName})")
                 }
@@ -112,7 +122,7 @@ internal class GatewaySocket(private val client: OkHttpClient) {
         awaitClose { socket.cancel() }
     }
 
-    private enum class SocketEvent { OPENED, WORK_AVAILABLE }
+    private enum class SocketEvent { OPENED, WORK_AVAILABLE, AUTHENTICATION_FAILED }
 
     companion object {
         private const val TAG = "GatewaySocket"

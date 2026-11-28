@@ -51,8 +51,8 @@
 <string name="gateway_runtime_paused_description">The gateway stays paused after a reboot. Tap Start when you’re ready.</string>
 <string name="gateway_runtime_start_failed">Couldn’t start the gateway</string>
 <string name="gateway_runtime_start_failed_description">Android blocked the service. Try starting it again from this screen.</string>
-<string name="gateway_runtime_settings_unavailable">Gateway settings unavailable</string>
-<string name="gateway_runtime_settings_unavailable_description">Payra couldn’t read or update its settings. Try starting again.</string>
+<string name="gateway_runtime_settings_unavailable">Gateway storage unavailable</string>
+<string name="gateway_runtime_settings_unavailable_description">Payra couldn’t access its saved settings or SMS job. Try starting again.</string>
 <string name="gateway_runtime_start">Start</string>
 <string name="gateway_runtime_pause">Pause</string>
 <string name="gateway_runtime_pausing">Pausing…</string>
@@ -64,7 +64,13 @@
 <string name="gateway_set_up_server">Set up server</string>
 <string name="gateway_server_connection">Server connection</string>
 <string name="gateway_server_url">Server URL</string>
-<string name="gateway_server_url_hint">Enter your server’s base URL, without /gateway.</string>
+<string name="gateway_server_url_hint">Enter your Payra server’s base URL.</string>
+<string name="gateway_key">Gateway key</string>
+<string name="gateway_key_hint">Paste the 64-character gateway key.</string>
+<string name="gateway_key_invalid">Enter a 64-character hexadecimal gateway key.</string>
+<string name="gateway_key_saved">A key is saved. Leave blank to keep it.</string>
+<string name="gateway_key_needed">Gateway key needed</string>
+<string name="gateway_key_authentication_failed">Check the gateway key in Server settings</string>
 <string name="gateway_server_invalid_url">Enter a valid HTTPS base URL, like https://gateway.example.com.</string>
 <string name="gateway_server_invalid_debug_url">Enter a valid HTTP or HTTPS base URL.</string>
 <string name="gateway_server_save_and_continue">Save and continue</string>

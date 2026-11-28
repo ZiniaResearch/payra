@@ -68,8 +68,7 @@ internal abstract class SmsJobDao {
     )
 
     @Query("""
-        UPDATE sms_jobs SET state = :state, errorCode = :errorCode, finishedAtMillis = :now,
-            recipient = '', message = '', retryable = :retryable
+        UPDATE sms_jobs SET state = :state, finishedAtMillis = :now, recipient = '', message = ''
         WHERE serverUrl = :serverUrl AND id = :id AND attemptId = :attemptId
             AND state IN ('SENDING', 'UNKNOWN') AND reportFrozen = 0
     """)
@@ -78,9 +77,7 @@ internal abstract class SmsJobDao {
         id: String,
         attemptId: String,
         state: SmsJobState,
-        errorCode: Int?,
         now: Long,
-        retryable: Boolean = false,
     ): Int
 
     @Query("""
@@ -94,15 +91,12 @@ internal abstract class SmsJobDao {
 
     @Query("""
         SELECT COUNT(*) AS received,
-            COUNT(CASE WHEN resultCode <> :successCode THEN 1 END) AS failed,
-            MIN(CASE WHEN resultCode <> :successCode THEN resultCode END) AS errorCode,
-            COUNT(CASE WHEN resultCode IN (:temporaryErrorCodes) THEN 1 END) AS temporaryFailures
+            COUNT(CASE WHEN resultCode <> :successCode THEN 1 END) AS failed
         FROM sms_send_parts WHERE attemptId = :attemptId
     """)
     protected abstract suspend fun partTotals(
         attemptId: String,
         successCode: Int,
-        temporaryErrorCodes: List<Int>,
     ): SmsPartTotals
 
     @Transaction
@@ -111,21 +105,19 @@ internal abstract class SmsJobDao {
         id: String,
         part: SmsSendPart,
         successCode: Int,
-        temporaryErrorCodes: List<Int>,
         now: Long,
     ): SmsJobState? {
         val expectedParts = resultPartCount(serverUrl, id, part.attemptId) ?: return null
         if (part.partIndex !in 0 until expectedParts || insertPart(part) == -1L) return null
 
-        val totals = partTotals(part.attemptId, successCode, temporaryErrorCodes)
+        val totals = partTotals(part.attemptId, successCode)
         if (totals.received < expectedParts) return null
         val state = when {
             totals.failed == 0 -> SmsJobState.SENT
             totals.failed < totals.received -> SmsJobState.PARTIAL
             else -> SmsJobState.FAILED
         }
-        val retryable = state == SmsJobState.FAILED && totals.temporaryFailures == expectedParts
-        finishAttempt(serverUrl, id, part.attemptId, state, totals.errorCode, now, retryable)
+        finishAttempt(serverUrl, id, part.attemptId, state, now)
         return state
     }
 
@@ -142,7 +134,7 @@ internal abstract class SmsJobDao {
     protected abstract suspend fun markReportFrozen(serverUrl: String, id: String, attemptNumber: Int)
 
     @Query("""
-        SELECT id, attemptNumber, state, partCount, errorCode, retryable FROM sms_jobs
+        SELECT id, attemptNumber, state FROM sms_jobs
         WHERE serverUrl = :serverUrl AND id = :id AND attemptNumber = :attemptNumber AND reportFrozen = 1
     """)
     protected abstract suspend fun readFrozenReport(serverUrl: String, id: String, attemptNumber: Int): PendingSmsReport?

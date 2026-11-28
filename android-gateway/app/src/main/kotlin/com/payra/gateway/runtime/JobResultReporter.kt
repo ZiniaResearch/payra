@@ -7,11 +7,13 @@ import com.payra.gateway.network.GatewayServer
 import com.payra.gateway.network.ReportResult
 import com.payra.gateway.storage.PendingSmsReport
 import com.payra.gateway.storage.SmsJobDao
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 internal class JobResultReporter(
@@ -33,10 +35,12 @@ internal class JobResultReporter(
                 val report = jobs.freezeReport(serverUrl, key) ?: return@collect
                 onRejected(null)
                 when (val result = upload(server, report, reconnected)) {
-                    ReportResult.Acknowledged -> {
-                        if (!jobs.acknowledgeReport(serverUrl, key)) return@collect
-                        Log.i(TAG, "Acknowledged job ${key.id} attempt ${key.attemptNumber}")
-                        onAcknowledged()
+                    ReportResult.Acknowledged -> withContext(NonCancellable) {
+                        // A network switch must not interrupt cleanup once Payra has acknowledged the report.
+                        if (jobs.acknowledgeReport(serverUrl, key)) {
+                            Log.i(TAG, "Acknowledged job ${key.id} attempt ${key.attemptNumber}")
+                            onAcknowledged()
+                        }
                     }
                     is ReportResult.Failure -> onRejected(result.reason)
                 }

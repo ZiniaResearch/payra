@@ -38,6 +38,11 @@ async fn serve() -> Result<(), Box<dyn Error>> {
         .map(Arc::new);
 
     let listener = TcpListener::bind(settings.bind_addr.as_str()).await?;
+    let gateway = modules::sms::gateway::routes(
+        pool.clone(),
+        settings.database_url,
+        settings.gateway_key_sha256,
+    );
     let state = state::AppState {
         pool,
         google,
@@ -47,7 +52,7 @@ async fn serve() -> Result<(), Box<dyn Error>> {
         media_base_url: settings.media_base_url,
         avatar_storage,
     };
-    let app = router::build(state);
+    let app = router::build(state).merge(gateway);
 
     axum::serve(listener, app).await?;
     Ok(())
