@@ -3,22 +3,28 @@ use std::time::Duration;
 use axum::{
     Json, Router,
     extract::{
-        State, WebSocketUpgrade,
+        DefaultBodyLimit, Path, Request, State, WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
     http::{
         HeaderMap, StatusCode,
         header::{AUTHORIZATION, CACHE_CONTROL},
     },
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, postgres::PgListener};
 use subtle::ConstantTimeEq;
 use tokio::{sync::watch, time::sleep};
+use uuid::Uuid;
 
-use super::repository;
+use super::{
+    repository,
+    results::{self, ResultRecord, SmsOutcome},
+};
 
 const WORK_CHANNEL: &str = "sms_work_available";
 const WORK_NOTICE: &str = r#"{"type":"work_available"}"#;
@@ -26,8 +32,19 @@ const WORK_NOTICE: &str = r#"{"type":"work_available"}"#;
 #[derive(Clone)]
 struct GatewayState {
     pool: PgPool,
-    key_sha256: Option<[u8; 32]>,
     notices: watch::Receiver<()>,
+}
+
+#[derive(Deserialize)]
+struct ResultRequest {
+    attempt: i32,
+    status: SmsOutcome,
+}
+
+#[derive(Serialize)]
+struct ResultAck {
+    id: String,
+    attempt: i32,
 }
 
 pub(crate) fn routes(pool: PgPool, database_url: String, key_sha256: Option<[u8; 32]>) -> Router {
@@ -39,30 +56,24 @@ pub(crate) fn routes(pool: PgPool, database_url: String, key_sha256: Option<[u8;
     Router::new()
         .route("/api/sms/gateway/ws", get(upgrade))
         .route("/api/sms/gateway/jobs/claim", post(claim))
-        .with_state(GatewayState {
-            pool,
+        .route(
+            "/api/sms/gateway/jobs/{job_id}/result",
+            post(report_result).layer(DefaultBodyLimit::max(1024)),
+        )
+        .route_layer(middleware::from_fn_with_state(
             key_sha256,
-            notices,
-        })
+            authorize_gateway,
+        ))
+        .with_state(GatewayState { pool, notices })
 }
 
-async fn upgrade(
-    State(state): State<GatewayState>,
-    headers: HeaderMap,
-    ws: WebSocketUpgrade,
-) -> Result<Response, StatusCode> {
-    require_gateway_key(&headers, state.key_sha256.as_ref())?;
-    Ok(ws
-        .max_message_size(1024)
+async fn upgrade(State(state): State<GatewayState>, ws: WebSocketUpgrade) -> Response {
+    ws.max_message_size(1024)
         .max_frame_size(1024)
-        .on_upgrade(move |socket| serve_socket(socket, state)))
+        .on_upgrade(move |socket| serve_socket(socket, state))
 }
 
-async fn claim(
-    State(state): State<GatewayState>,
-    headers: HeaderMap,
-) -> Result<Response, StatusCode> {
-    require_gateway_key(&headers, state.key_sha256.as_ref())?;
+async fn claim(State(state): State<GatewayState>) -> Result<Response, StatusCode> {
     let job = repository::claim_job(&state.pool).await.map_err(|error| {
         eprintln!("SMS gateway could not confirm a claim: {error}");
         StatusCode::SERVICE_UNAVAILABLE
@@ -72,6 +83,41 @@ async fn claim(
         Some(job) => ([(CACHE_CONTROL, "no-store")], Json(job)).into_response(),
         None => StatusCode::NO_CONTENT.into_response(),
     })
+}
+
+async fn report_result(
+    State(state): State<GatewayState>,
+    Path(job_id): Path<String>,
+    Json(report): Json<ResultRequest>,
+) -> Result<Json<ResultAck>, StatusCode> {
+    let job_id = Uuid::parse_str(&job_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    if report.attempt < 1 {
+        return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    let result = results::record_result(&state.pool, job_id, report.attempt, report.status)
+        .await
+        .map_err(|error| {
+            eprintln!("SMS gateway could not confirm a result: {error}");
+            StatusCode::SERVICE_UNAVAILABLE
+        })?;
+    match result {
+        ResultRecord::Acknowledged => Ok(Json(ResultAck {
+            id: job_id.to_string(),
+            attempt: report.attempt,
+        })),
+        ResultRecord::NotFound => Err(StatusCode::NOT_FOUND),
+        ResultRecord::Conflict => Err(StatusCode::CONFLICT),
+    }
+}
+
+async fn authorize_gateway(
+    State(key_sha256): State<Option<[u8; 32]>>,
+    request: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    require_gateway_key(request.headers(), key_sha256.as_ref())?;
+    Ok(next.run(request).await)
 }
 
 fn require_gateway_key(headers: &HeaderMap, expected: Option<&[u8; 32]>) -> Result<(), StatusCode> {

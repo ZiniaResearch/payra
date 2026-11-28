@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::modules::auth::AccessIdentity;
 
-const SMS_CLAIM_LOCK: i64 = i64::from_be_bytes(*b"smsclaim");
+const SMS_GATEWAY_LOCK: i64 = i64::from_be_bytes(*b"smsclaim");
 
 #[derive(Serialize)]
 pub(super) struct SavedRecipient {
@@ -105,14 +105,18 @@ pub(super) async fn insert_jobs(
     .await
 }
 
+pub(super) async fn lock_gateway(connection: &mut PgConnection) -> Result<(), sqlx::Error> {
+    // Claims and results serialize across API instances for the single gateway.
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(SMS_GATEWAY_LOCK)
+        .execute(connection)
+        .await?;
+    Ok(())
+}
+
 pub(super) async fn claim_job(pool: &PgPool) -> Result<Option<ClaimedJob>, sqlx::Error> {
     let mut tx = pool.begin().await?;
-
-    // Serialize claims for the single gateway. Read the queue after acquiring the lock.
-    sqlx::query("SELECT pg_advisory_xact_lock($1)")
-        .bind(SMS_CLAIM_LOCK)
-        .execute(&mut *tx)
-        .await?;
+    lock_gateway(&mut tx).await?;
 
     let job = sqlx::query_as(
         "WITH open_attempt AS (
