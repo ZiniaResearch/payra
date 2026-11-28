@@ -5,6 +5,8 @@ use uuid::Uuid;
 
 use crate::modules::auth::AccessIdentity;
 
+const SMS_CLAIM_LOCK: i64 = i64::from_be_bytes(*b"smsclaim");
+
 #[derive(Serialize)]
 pub(super) struct SavedRecipient {
     id: String,
@@ -18,6 +20,27 @@ impl FromRow<'_, PgRow> for SavedRecipient {
             id: row.try_get("id")?,
             phone: row.try_get("phone")?,
             name: row.try_get("name")?,
+        })
+    }
+}
+
+#[derive(Serialize)]
+pub(super) struct ClaimedJob {
+    id: String,
+    attempt: i32,
+    #[serde(rename = "to")]
+    recipient_phone: String,
+    #[serde(rename = "text")]
+    message_text: String,
+}
+
+impl FromRow<'_, PgRow> for ClaimedJob {
+    fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+        Ok(Self {
+            id: row.try_get("id")?,
+            attempt: row.try_get("attempt")?,
+            recipient_phone: row.try_get("recipient_phone")?,
+            message_text: row.try_get("message_text")?,
         })
     }
 }
@@ -80,6 +103,57 @@ pub(super) async fn insert_jobs(
     .bind(send_times)
     .fetch_all(connection)
     .await
+}
+
+pub(super) async fn claim_job(pool: &PgPool) -> Result<Option<ClaimedJob>, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    // Serialize claims for the single gateway. Read the queue after acquiring the lock.
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(SMS_CLAIM_LOCK)
+        .execute(&mut *tx)
+        .await?;
+
+    let job = sqlx::query_as(
+        "WITH open_attempt AS (
+             SELECT job_id, attempt_number FROM sms_attempts
+             WHERE result_status IS NULL
+         ), claimed_job AS (
+             UPDATE sms_jobs
+             SET status = 'sending'
+             WHERE id = (
+                 SELECT id FROM sms_jobs
+                 WHERE status = 'queued'
+                   AND next_attempt_at <= statement_timestamp()
+                   AND send_by > statement_timestamp()
+                   AND NOT EXISTS (SELECT 1 FROM open_attempt)
+                 ORDER BY next_attempt_at, id
+                 LIMIT 1
+                 FOR UPDATE
+             )
+             RETURNING id
+         ), recorded_attempt AS (
+             INSERT INTO sms_attempts AS attempt (job_id, attempt_number, claimed_at)
+             SELECT id, 1, statement_timestamp() FROM claimed_job
+             ON CONFLICT (job_id) DO UPDATE
+             SET attempt_number = attempt.attempt_number + 1,
+                 claimed_at = EXCLUDED.claimed_at,
+                 result_status = NULL
+             RETURNING job_id, attempt_number
+         )
+         SELECT job.id::text, attempt.attempt_number AS attempt,
+                job.recipient_phone, job.message_text
+         FROM (
+             SELECT job_id, attempt_number FROM open_attempt
+             UNION ALL
+             SELECT job_id, attempt_number FROM recorded_attempt
+         ) AS attempt
+         JOIN sms_jobs AS job ON job.id = attempt.job_id",
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(job)
 }
 
 pub(super) async fn notify_jobs_changed(connection: &mut PgConnection) -> Result<(), sqlx::Error> {
