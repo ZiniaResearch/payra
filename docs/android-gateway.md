@@ -1,6 +1,6 @@
 # Android SMS gateway
 
-Payra owns the SMS schedule, queue, and history. The Android gateway connects to the authenticated Payra WebSocket and logs work notices. Claiming, sending, and reporting were tested against the Bun mock and will be wired to the Payra HTTP endpoints separately.
+Payra owns the SMS schedule, queue, and history. The Android gateway connects to the authenticated Payra WebSocket and logs work notices. The debug build claims a job on each notice and logs the response.
 
 ## Phone architecture
 
@@ -19,7 +19,7 @@ Kotlin app code is under `android-gateway/app/src/main/kotlin/com/payra/gateway/
 | Request | Contract |
 | --- | --- |
 | WebSocket `/api/sms/gateway/ws` | Android sends `Authorization: Bearer <key>` and logs `{"type":"work_available"}` when received. |
-| Planned `POST /api/sms/gateway/jobs/claim` | Return `200` with `{id, attempt, to, text}`, or `204` for an empty queue. Use a stable job UUID and start attempts at `1`. |
+| `POST /api/sms/gateway/jobs/claim` | Return `200` with `{id, attempt, to, text}`, or `204` when no work is available. A repeated claim returns the outstanding assignment with the same job UUID and attempt number. |
 | Planned `POST /api/sms/gateway/jobs/{id}/result` | Phone sends `{attempt, status, partCount, errorCode, retryable}`. Persist the outcome before returning `200` with `{id, attempt}`. Return the same acknowledgment for an identical replay of the same job and attempt. |
 
 The phone saves a claim before sending and waits for acknowledgment before claiming again. A saved job can send without internet while the SIM is in service. Once Android records the outcome, the app clears the recipient and text from its job record. It keeps the pending report across restarts and retries the same report after a transient error or when the network returns. A matching acknowledgment clears the report and its part records.
@@ -28,6 +28,6 @@ Result statuses are `sent`, `failed`, `partial`, `unknown`, and `too_long`. `sen
 
 ## Local testing and release work
 
-Set `GATEWAY_API_KEY_SHA256` on Payra to the SHA-256 hex digest of the 64-character key. Paste the original key and Payra’s base URL into Android’s Server connection settings. Start the gateway and run `adb logcat -s GatewaySocket:I` to see `WebSocket connected` and `Received work_available` when the scheduler finds due jobs.
+Set `GATEWAY_API_KEY_SHA256` on Payra to the SHA-256 hex digest of the 64-character key. Paste the original key and Payra’s base URL into Android’s Server connection settings. Start the debug build and run `adb logcat -s GatewaySocket:I GatewayService:I`. Use a dummy SMS because the debug claim logs its recipient and text. Payra keeps the claim open until it receives a result.
 
-The release build requires HTTPS. Remaining work includes authenticated claim and result endpoints and recovery when the server permanently rejects a result. Before unattended deployment, resolve release lint, configure APK signing, exclude temporary SMS data from backup, and verify reboot and network failover on the target phones.
+The release build requires HTTPS. Remaining work includes the result endpoint, authenticated HTTP wiring in Android, and recovery when the server permanently rejects a result. Before unattended deployment, resolve release lint, configure APK signing, exclude temporary SMS data from backup, and verify reboot and network failover on the target phones.
