@@ -16,20 +16,18 @@ internal data class GatewayServer(
     val encryptedKey: String,
 ) {
     val socketUrl: HttpUrl
-        get() = baseUrl.newBuilder()
-            .addPathSegments("api/sms/gateway/ws")
-            .build()
+        get() = gatewayUrl().addPathSegment("ws").build()
 
     val claimUrl: HttpUrl
-        get() = baseUrl.newBuilder()
-            .addPathSegments("api/sms/gateway/jobs/claim")
-            .build()
+        get() = gatewayUrl().addPathSegments("jobs/claim").build()
 
-    fun resultUrl(jobId: String): HttpUrl = baseUrl.newBuilder()
+    fun resultUrl(jobId: String): HttpUrl = gatewayUrl()
         .addPathSegment("jobs")
         .addPathSegment(jobId)
         .addPathSegment("result")
         .build()
+
+    private fun gatewayUrl() = baseUrl.newBuilder().addPathSegments("api/sms/gateway")
 
     companion object {
         fun isValidKey(key: String): Boolean =
