@@ -64,8 +64,10 @@ pub(super) async fn insert_jobs(
              SELECT phone FROM sms_recipients
              WHERE account_id = $1 AND id = ANY($2::uuid[])
          )
-         INSERT INTO sms_jobs (account_id, recipient_phone, message_text, send_at, send_by)
-         SELECT $1, recipient.phone, $3, schedule.send_at,
+         INSERT INTO sms_jobs (
+             account_id, recipient_phone, message_text, send_at, next_attempt_at, send_by
+         )
+         SELECT $1, recipient.phone, $3, schedule.send_at, schedule.send_at,
                 schedule.send_at + interval '6 hours'
          FROM selected_recipients AS recipient
          CROSS JOIN unnest($4::timestamptz[]) AS schedule(send_at)
