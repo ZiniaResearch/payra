@@ -8,9 +8,9 @@ import com.payra.gateway.storage.SmsJobDao
 import com.payra.gateway.storage.SmsJobState
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
@@ -19,6 +19,8 @@ import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 internal data class SmsSendOptions(val subscriptionId: Int, val maxParts: Int)
@@ -66,26 +68,29 @@ internal class SmsSendQueue(
         }
 
         val attemptId = UUID.randomUUID().toString()
-        if (jobs.beginSend(job.serverUrl, job.id, attemptId, parts, System.currentTimeMillis()) == 0) return
-
-        currentCoroutineContext().ensureActive()
-        // Room suspended the caller. Recheck the selected SIM and limit before submitting.
-        if (currentOptions() != options) {
-            jobs.returnToQueue(job.serverUrl, job.id, attemptId)
-            return
-        }
-
-        try {
-            sender.send(job, attemptId, prepared)
-            Log.i(TAG, "Submitted job ${job.id} ($parts SMS parts)")
-        } catch (error: RuntimeException) {
-            if (error is CancellationException) throw error
-            val outcome = when (error) {
-                is SecurityException, is IllegalArgumentException, is UnsupportedOperationException -> SmsJobState.FAILED
-                else -> SmsJobState.UNKNOWN
+        val sendingContext = currentCoroutineContext()
+        withContext(NonCancellable) {
+            if (jobs.beginSend(job.serverUrl, job.id, attemptId, parts, System.currentTimeMillis()) == 0) {
+                return@withContext
             }
-            jobs.finishAttempt(job.serverUrl, job.id, attemptId, outcome, null, System.currentTimeMillis())
-            Log.w(TAG, "Job ${job.id} outcome: $outcome (${error.javaClass.simpleName})")
+            // If the service stopped or its settings changed during the Room write, no SMS was submitted yet.
+            if (!sendingContext.isActive || currentOptions() != options) {
+                jobs.returnToQueue(job.serverUrl, job.id, attemptId)
+                return@withContext
+            }
+
+            try {
+                sender.send(job, attemptId, prepared)
+                Log.i(TAG, "Submitted job ${job.id} ($parts SMS parts)")
+            } catch (error: RuntimeException) {
+                if (error is CancellationException) throw error
+                val outcome = when (error) {
+                    is SecurityException, is IllegalArgumentException, is UnsupportedOperationException -> SmsJobState.FAILED
+                    else -> SmsJobState.UNKNOWN
+                }
+                jobs.finishAttempt(job.serverUrl, job.id, attemptId, outcome, System.currentTimeMillis())
+                Log.w(TAG, "Job ${job.id} outcome: $outcome (${error.javaClass.simpleName})")
+            }
         }
     }
 
@@ -103,7 +108,7 @@ internal class SmsSendQueue(
         }
 
         val updated = jobs.finishAttempt(
-            job.serverUrl, job.id, attemptId, SmsJobState.UNKNOWN, null, System.currentTimeMillis(),
+            job.serverUrl, job.id, attemptId, SmsJobState.UNKNOWN, System.currentTimeMillis(),
         )
         if (updated > 0) Log.w(TAG, "Job ${job.id} outcome: UNKNOWN")
     }
