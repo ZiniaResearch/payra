@@ -37,7 +37,7 @@ internal class GatewaySocket(private val client: OkHttpClient) {
         networks: Flow<Network?>,
         beforeConnect: () -> Boolean,
         onStatus: (GatewayConnectionStatus) -> Unit,
-        onWorkAvailable: () -> Unit,
+        onWorkAvailable: suspend () -> Unit,
     ) {
         val socketClient = client.newBuilder()
             .pingInterval(server.heartbeat.seconds.toLong(), TimeUnit.SECONDS)

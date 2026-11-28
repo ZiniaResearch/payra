@@ -22,7 +22,7 @@ internal data class GatewayServer(
 
     val claimUrl: HttpUrl
         get() = baseUrl.newBuilder()
-            .addPathSegments("jobs/claim")
+            .addPathSegments("api/sms/gateway/jobs/claim")
             .build()
 
     fun resultUrl(jobId: String): HttpUrl = baseUrl.newBuilder()

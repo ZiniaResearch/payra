@@ -27,7 +27,7 @@ internal sealed interface ReportResult {
     data class Failure(val reason: String, val retryable: Boolean = false) : ReportResult
 }
 
-internal class GatewayApi(baseClient: OkHttpClient) {
+internal class GatewayApi(baseClient: OkHttpClient, private val gatewayKey: String) {
     private val client = baseClient.newBuilder()
         .retryOnConnectionFailure(false)
         .callTimeout(15, TimeUnit.SECONDS)
@@ -36,6 +36,7 @@ internal class GatewayApi(baseClient: OkHttpClient) {
     suspend fun claimJob(server: GatewayServer): ClaimResult {
         val request = Request.Builder()
             .url(server.claimUrl)
+            .header("Authorization", "Bearer $gatewayKey")
             .post(RequestBody.EMPTY)
             .build()
         return try {

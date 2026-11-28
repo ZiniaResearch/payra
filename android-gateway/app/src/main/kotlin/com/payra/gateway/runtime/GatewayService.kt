@@ -8,6 +8,9 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.ServiceCompat
+import com.payra.gateway.BuildConfig
+import com.payra.gateway.network.ClaimResult
+import com.payra.gateway.network.GatewayApi
 import com.payra.gateway.network.GatewayConnectionStatus
 import com.payra.gateway.network.GatewayServer
 import com.payra.gateway.network.GatewaySocket
@@ -38,9 +41,8 @@ class GatewayService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val settings by lazy { GatewaySettings(this) }
     private val notification by lazy { GatewayNotification(this) }
-    private val gatewaySocket by lazy {
-        GatewaySocket(OkHttpClient.Builder().followRedirects(false).build())
-    }
+    private val networkClient by lazy { OkHttpClient.Builder().followRedirects(false).build() }
+    private val gatewaySocket by lazy { GatewaySocket(networkClient) }
 
     private var monitorJob: Job? = null
     private var pauseJob: Job? = null
@@ -153,6 +155,7 @@ class GatewayService : Service() {
             return
         }
         val connectivity = checkNotNull(getSystemService(ConnectivityManager::class.java))
+        val debugClaimApi = if (BuildConfig.DEBUG) GatewayApi(networkClient, gatewayKey) else null
         gatewaySocket.monitor(
             server = server,
             gatewayKey = gatewayKey,
@@ -167,8 +170,20 @@ class GatewayService : Service() {
                 GatewayRuntime.publish(
                     GatewayRuntime.state.value.copy(lastWorkNoticeAtMillis = System.currentTimeMillis()),
                 )
+                if (debugClaimApi != null) logClaim(debugClaimApi.claimJob(server))
             },
         )
+    }
+
+    private fun logClaim(result: ClaimResult) {
+        when (result) {
+            ClaimResult.Empty -> Log.i(TAG, "Claim returned no job (204)")
+            is ClaimResult.Failure -> Log.w(TAG, "Claim failed (${result.reason})")
+            is ClaimResult.Job -> Log.i(
+                TAG,
+                "Claimed job ${result.id} attempt ${result.attemptNumber}, to ${result.recipient}, text: ${result.message}",
+            )
+        }
     }
 
     private fun publishConnectionStatus(status: GatewayConnectionStatus) {
