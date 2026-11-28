@@ -51,8 +51,8 @@
 <string name="gateway_runtime_paused_description">The gateway stays paused after a reboot. Tap Start when you’re ready.</string>
 <string name="gateway_runtime_start_failed">Couldn’t start the gateway</string>
 <string name="gateway_runtime_start_failed_description">Android blocked the service. Try starting it again from this screen.</string>
-<string name="gateway_runtime_settings_unavailable">Gateway settings unavailable</string>
-<string name="gateway_runtime_settings_unavailable_description">Payra couldn’t read or update its settings. Try starting again.</string>
+<string name="gateway_runtime_settings_unavailable">Gateway storage unavailable</string>
+<string name="gateway_runtime_settings_unavailable_description">Payra couldn’t access its saved settings or SMS job. Try starting again.</string>
 <string name="gateway_runtime_start">Start</string>
 <string name="gateway_runtime_pause">Pause</string>
 <string name="gateway_runtime_pausing">Pausing…</string>

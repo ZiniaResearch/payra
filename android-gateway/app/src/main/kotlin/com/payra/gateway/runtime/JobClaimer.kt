@@ -15,21 +15,23 @@ internal class JobClaimer(
     private val jobs: SmsJobDao,
 ) {
     suspend fun claim(server: GatewayServer, canClaim: () -> Boolean) {
-        currentCoroutineContext().ensureActive()
-        if (!canClaim() || jobs.hasOutstandingJob()) return
-
-        var result = api.claimJob(server)
-        if (result is ClaimResult.Failure && result.retryable) {
-            Log.w(TAG, "Claim failed (${result.reason}). Will retry once if ready.")
-            delay(2_000)
-            if (!canClaim() || jobs.hasOutstandingJob()) return
-            result = api.claimJob(server)
-        }
-
-        when (result) {
-            ClaimResult.Empty -> Log.d(TAG, "No job available")
-            is ClaimResult.Failure -> Log.w(TAG, "Claim failed (${result.reason})")
-            is ClaimResult.Job -> saveJob(server, result)
+        var retryDelay = INITIAL_RETRY_MILLIS
+        while (canClaim() && !jobs.hasOutstandingJob()) {
+            currentCoroutineContext().ensureActive()
+            if (!canClaim()) return
+            when (val result = api.claimJob(server)) {
+                ClaimResult.Empty -> return
+                is ClaimResult.Job -> {
+                    saveJob(server, result)
+                    return
+                }
+                is ClaimResult.Failure -> {
+                    Log.w(TAG, "Claim failed (${result.reason})")
+                    if (!result.retryable) return
+                }
+            }
+            delay(retryDelay)
+            retryDelay = (retryDelay * 2).coerceAtMost(MAX_RETRY_MILLIS)
         }
     }
 
@@ -48,5 +50,7 @@ internal class JobClaimer(
 
     companion object {
         private const val TAG = "GatewayClaims"
+        private const val INITIAL_RETRY_MILLIS = 2_000L
+        private const val MAX_RETRY_MILLIS = 60_000L
     }
 }

@@ -37,7 +37,7 @@ internal class GatewaySocket(private val client: OkHttpClient) {
         networks: Flow<Network?>,
         beforeConnect: () -> Boolean,
         onStatus: (GatewayConnectionStatus) -> Unit,
-        onWorkAvailable: suspend () -> Unit,
+        onWorkAvailable: () -> Unit,
     ) {
         val socketClient = client.newBuilder()
             .pingInterval(server.heartbeat.seconds.toLong(), TimeUnit.SECONDS)
@@ -68,10 +68,7 @@ internal class GatewaySocket(private val client: OkHttpClient) {
                             Log.i(TAG, "WebSocket connected")
                             onStatus(GatewayConnectionStatus.CONNECTED)
                         }
-                        SocketEvent.WORK_AVAILABLE -> {
-                            Log.i(TAG, "Received work_available")
-                            onWorkAvailable()
-                        }
+                        SocketEvent.WORK_AVAILABLE -> onWorkAvailable()
                         SocketEvent.AUTHENTICATION_FAILED -> {
                             authenticationFailed = true
                             onStatus(GatewayConnectionStatus.AUTHENTICATION_FAILED)

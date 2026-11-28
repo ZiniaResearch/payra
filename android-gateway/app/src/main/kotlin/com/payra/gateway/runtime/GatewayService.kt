@@ -3,13 +3,12 @@ package com.payra.gateway.runtime
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.database.sqlite.SQLiteException
 import android.net.ConnectivityManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.ServiceCompat
-import com.payra.gateway.BuildConfig
-import com.payra.gateway.network.ClaimResult
 import com.payra.gateway.network.GatewayApi
 import com.payra.gateway.network.GatewayConnectionStatus
 import com.payra.gateway.network.GatewayServer
@@ -17,8 +16,11 @@ import com.payra.gateway.network.GatewaySocket
 import com.payra.gateway.network.observeDefaultNetwork
 import com.payra.gateway.permissions.hasRequiredGatewayPermissions
 import com.payra.gateway.sms.ActiveSim
+import com.payra.gateway.sms.SmsSender
 import com.payra.gateway.sms.observeActiveSims
 import com.payra.gateway.sms.observeSimService
+import com.payra.gateway.storage.GatewayConfiguration
+import com.payra.gateway.storage.GatewayDatabase
 import com.payra.gateway.storage.GatewayKeyCipher
 import com.payra.gateway.storage.GatewayRunPreference
 import com.payra.gateway.storage.GatewaySettings
@@ -29,11 +31,17 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 
@@ -43,6 +51,8 @@ class GatewayService : Service() {
     private val notification by lazy { GatewayNotification(this) }
     private val networkClient by lazy { OkHttpClient.Builder().followRedirects(false).build() }
     private val gatewaySocket by lazy { GatewaySocket(networkClient) }
+    private val smsJobs by lazy { GatewayDatabase.getInstance(this).smsJobs() }
+    private val smsSendQueue by lazy { SmsSendQueue(smsJobs, SmsSender(this)) }
 
     private var monitorJob: Job? = null
     private var pauseJob: Job? = null
@@ -67,6 +77,9 @@ class GatewayService : Service() {
                 monitorGateway(manualStart = intent?.action == ACTION_START)
             } catch (error: IOException) {
                 Log.w(TAG, "Could not read or update gateway settings", error)
+                stopGateway(GatewayPhase.SETTINGS_UNAVAILABLE)
+            } catch (error: SQLiteException) {
+                Log.w(TAG, "Could not access the saved SMS job (${error.javaClass.simpleName})")
                 stopGateway(GatewayPhase.SETTINGS_UNAVAILABLE)
             } catch (error: SecurityException) {
                 Log.w(TAG, "Could not monitor the sending SIM", error)
@@ -118,7 +131,9 @@ class GatewayService : Service() {
         var observedServer: GatewayServer? = null
         var simJob: Job? = null
         var socketJob: Job? = null
-        settings.configuration.collect { configuration ->
+        var sendingJob: Job? = null
+        val configurations = settings.configuration.stateIn(this)
+        configurations.collect { configuration ->
             val simId = configuration.sendingSim?.subscriptionId
             val server = configuration.server
             if (configuration.runPreference !is GatewayRunPreference.Enabled || simId == null || server == null) {
@@ -130,6 +145,10 @@ class GatewayService : Service() {
                 simJob?.cancelAndJoin()
                 observedSimId = simId
                 simJob = launch { monitorSim(simId) }
+            }
+            if (server.baseUrl != observedServer?.baseUrl) {
+                sendingJob?.cancelAndJoin()
+                sendingJob = launch { monitorSending(server.baseUrl.toString(), configurations) }
             }
             if (server != observedServer) {
                 socketJob?.cancelAndJoin()
@@ -146,45 +165,103 @@ class GatewayService : Service() {
         }
     }
 
-    private suspend fun monitorServer(server: GatewayServer) {
+    private suspend fun monitorSending(serverUrl: String, configurations: StateFlow<GatewayConfiguration>) {
+        val options = configurations.combine(GatewayRuntime.state) { configuration, state ->
+            sendingOptions(serverUrl, configuration, state)
+        }.distinctUntilChanged()
+
+        smsSendQueue.monitor(serverUrl, options) {
+            if (hasRequiredGatewayPermissions(this)) {
+                sendingOptions(serverUrl, configurations.value, GatewayRuntime.state.value)
+            } else {
+                null
+            }
+        }
+    }
+
+    private fun sendingOptions(
+        serverUrl: String,
+        configuration: GatewayConfiguration,
+        state: GatewayRuntimeState,
+    ): SmsSendOptions? {
+        val simId = configuration.sendingSim?.subscriptionId ?: return null
+        if (configuration.runPreference !is GatewayRunPreference.Enabled || !configuration.hasGatewayKey ||
+            configuration.serverBaseUrl?.toString() != serverUrl ||
+            state.phase != GatewayPhase.RUNNING || state.isPausing || state.subscriptionId != simId
+        ) {
+            return null
+        }
+        return SmsSendOptions(simId, configuration.maxSmsParts)
+    }
+
+    private suspend fun monitorServer(server: GatewayServer) = coroutineScope {
         val gatewayKey = try {
             GatewayKeyCipher.decrypt(server.encryptedKey)
         } catch (_: IOException) {
             Log.w(TAG, "Could not read the saved gateway key")
             publishConnectionStatus(GatewayConnectionStatus.AUTHENTICATION_FAILED)
-            return
+            return@coroutineScope
         }
         val connectivity = checkNotNull(getSystemService(ConnectivityManager::class.java))
-        val debugClaimApi = if (BuildConfig.DEBUG) GatewayApi(networkClient, gatewayKey) else null
+        val networks = observeDefaultNetwork(connectivity).stateIn(this)
+        val api = GatewayApi(networkClient, gatewayKey)
+        val claimer = JobClaimer(api, smsJobs)
+        val reporter = JobResultReporter(api, smsJobs)
+        // Notices prompt a queue check, so concurrent notices can share one pending slot.
+        val claimRequests = Channel<Unit>(Channel.CONFLATED)
+        val reconnected = Channel<Unit>(Channel.CONFLATED)
+
+        launch {
+            claimRequests.consumeEach {
+                claimer.claim(server) {
+                    isReadyToClaim(GatewayRuntime.state.value) &&
+                        hasRequiredGatewayPermissions(this@GatewayService)
+                }
+            }
+        }
+        launch {
+            reporter.monitor(
+                server = server,
+                networks = networks,
+                reconnected = reconnected,
+                onRejected = { error ->
+                    GatewayRuntime.publish(GatewayRuntime.state.value.copy(reportError = error))
+                },
+                onAcknowledged = { claimRequests.trySend(Unit) },
+            )
+        }
+        launch {
+            GatewayRuntime.state.map(::isReadyToClaim).distinctUntilChanged().collect { ready ->
+                if (ready) claimRequests.trySend(Unit)
+            }
+        }
+
         gatewaySocket.monitor(
             server = server,
             gatewayKey = gatewayKey,
-            networks = observeDefaultNetwork(connectivity),
+            networks = networks,
             beforeConnect = {
                 val allowed = hasRequiredGatewayPermissions(this@GatewayService)
                 if (!allowed) stopGateway(GatewayPhase.PERMISSION_REQUIRED)
                 allowed
             },
-            onStatus = ::publishConnectionStatus,
+            onStatus = { status ->
+                publishConnectionStatus(status)
+                if (status == GatewayConnectionStatus.CONNECTED) reconnected.trySend(Unit)
+            },
             onWorkAvailable = {
                 GatewayRuntime.publish(
                     GatewayRuntime.state.value.copy(lastWorkNoticeAtMillis = System.currentTimeMillis()),
                 )
-                if (debugClaimApi != null) logClaim(debugClaimApi.claimJob(server))
+                claimRequests.trySend(Unit)
             },
         )
     }
 
-    private fun logClaim(result: ClaimResult) {
-        when (result) {
-            ClaimResult.Empty -> Log.i(TAG, "Claim returned no job (204)")
-            is ClaimResult.Failure -> Log.w(TAG, "Claim failed (${result.reason})")
-            is ClaimResult.Job -> Log.i(
-                TAG,
-                "Claimed job ${result.id} attempt ${result.attemptNumber}, to ${result.recipient}, text: ${result.message}",
-            )
-        }
-    }
+    private fun isReadyToClaim(state: GatewayRuntimeState): Boolean =
+        state.phase == GatewayPhase.RUNNING &&
+            state.connectionStatus == GatewayConnectionStatus.CONNECTED &&
+            !state.isPausing
 
     private fun publishConnectionStatus(status: GatewayConnectionStatus) {
         val previous = GatewayRuntime.state.value
