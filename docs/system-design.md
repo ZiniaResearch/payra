@@ -54,7 +54,7 @@ The remaining product rules in this document are the agreed target, not currentl
 
 - Default the time zone selector to the customer's saved preference, initially `Asia/Dhaka`. Store the chosen IANA time zone alongside the resolved `send_at` instant. If a local time occurs twice, ask the customer to pick an offset. If it does not occur, ask for another time. [PostgreSQL date and time types](https://www.postgresql.org/docs/current/datatype-datetime.html)
 - Commit each new schedule, edit, or cancellation before waking the worker. The worker reads the earliest queued attempt time through an index and keeps its timer in memory. It reads PostgreSQL again on startup and sends a work notice when a job becomes due.
-- Timer changes and work notices leave job status alone. The Android gateway's claim atomically assigns an attempt. Payra records the outcome before acknowledging it. A confirmed temporary failure on attempt 1 can queue attempt 2 within the send window in the same transaction.
+- Timer changes and work notices leave job status alone. The Android gateway's claim atomically assigns an attempt. Payra records the outcome before acknowledging it. A failed, partial, or unknown first attempt can queue attempt 2 after 15 minutes if its retry time is within the send window.
 - Store a send-by instant on each job so a restart can pick up queued jobs inside their window and expire older ones. The send window is six hours from the scheduled time.
 - Queue only for an active, opted-in recipient. The account owner shares an invitation link through an existing channel. Record consent for that account and phone number through a flow accepted by the SMS provider. Replacing a phone number deactivates the old recipient entry and creates a new entry that needs consent. Apply provider opt-outs to every affected recipient and recheck consent and suppression before dispatch. [Example SMS provider messaging policy](https://www.twilio.com/en-us/legal/messaging-policy)
 - A queued text can be edited or cancelled until the gateway claims it. An edit revalidates the final body, consent, and time. It retains the existing reservation because each scheduled text costs one credit. Cancellation releases that reservation.
@@ -92,9 +92,8 @@ stateDiagram-v2
     Scheduled --> Sending: Android gateway claims
     Scheduled --> Cancelled: release credit
     Scheduled --> Expired: release credit
-    Sending --> Scheduled: confirmed retryable rejection
+    Sending --> Scheduled: result qualifies for retry
     Sending --> Cancelled: consent withdrawn before submission
-    Sending --> Expired: window closed before submission
     Sending --> Submitted: accepted and credit consumed
     Sending --> Failed: confirmed rejection and credit released
     Sending --> Unknown: timeout or interrupted attempt
@@ -102,7 +101,7 @@ stateDiagram-v2
     Unknown --> Failed: non-acceptance confirmed and credit released
 ```
 
-Keep delivery status separate from submission state. After submission, a provider receipt can mark the SMS delivered or undelivered. A retry is eligible only after a definite temporary rejection and only within the send window. Reconcile unknown attempts before attempting another provider call. A database transaction can prevent two workers claiming the same job, but an SMS provider can accept a request before the worker records the result. [Example SMS delivery lifecycle](https://www.twilio.com/docs/messaging/guides/outbound-message-status-in-status-callbacks)
+Keep delivery status separate from submission state. After submission, a provider receipt can mark the SMS delivered or undelivered. The send window applies when the gateway claims a job. Retrying a partial or unknown outcome can repeat an SMS that already went out. [Example SMS delivery lifecycle](https://www.twilio.com/docs/messaging/guides/outbound-message-status-in-status-callbacks)
 
 ## Launch checks
 
